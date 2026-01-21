@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QApplication
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QApplication, QSizeGrip
 )
-from PyQt6.QtCore import Qt, QTimer, QPoint
+from PyQt6.QtCore import Qt, QTimer, QPoint, QSize
 from PyQt6.QtGui import QFont
 
 from config import Config
@@ -13,6 +13,7 @@ class StealthOverlay(QWidget):
         super().__init__()
         self._config = config
         self._drag_pos: QPoint | None = None
+        self._resize_edge: str | None = None
         self._setup_ui()
         self._setup_timer()
 
@@ -23,7 +24,7 @@ class StealthOverlay(QWidget):
             Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedWidth(self._config.overlay_width)
+        self.setMinimumSize(300, 150)
 
         bg_alpha = int(self._config.overlay_opacity * 255)
 
@@ -64,11 +65,24 @@ class StealthOverlay(QWidget):
         self._scroll_area = QScrollArea()
         self._scroll_area.setWidgetResizable(True)
         self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._scroll_area.setStyleSheet("""
             QScrollArea {
                 background-color: transparent;
                 border: none;
+            }
+            QScrollBar:vertical {
+                background-color: rgba(60, 60, 60, 100);
+                width: 6px;
+                border-radius: 3px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: rgba(150, 150, 150, 150);
+                border-radius: 3px;
+                min-height: 20px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
             }
         """)
 
@@ -96,6 +110,9 @@ class StealthOverlay(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self._container)
 
+        self._size_grip = QSizeGrip(self)
+        self._size_grip.setStyleSheet("background: transparent;")
+
     def _setup_timer(self):
         self._hide_timer = QTimer(self)
         self._hide_timer.timeout.connect(self.hide)
@@ -104,13 +121,15 @@ class StealthOverlay(QWidget):
     def show_response(self, text: str):
         self._text_label.setText(text)
         self._position_top_center()
-        self.adjustSize()
-        screen_height = QApplication.primaryScreen().geometry().height()
-        self.setMaximumHeight(int(screen_height * 0.6))
+        self.resize(self._config.overlay_width, 400)
         self.show()
         make_stealth(self)
         if self._config.overlay_timeout_ms > 0:
             self._hide_timer.start(self._config.overlay_timeout_ms)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._size_grip.move(self.width() - 16, self.height() - 16)
 
     def _position_top_center(self):
         screen = QApplication.primaryScreen().geometry()

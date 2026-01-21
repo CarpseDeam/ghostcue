@@ -1,3 +1,4 @@
+import os
 import subprocess
 from datetime import datetime
 
@@ -7,9 +8,18 @@ from app.ocr import WindowsOCR
 
 class Analyzer:
     CLAUDE_PATH = r"C:\Users\carps\AppData\Roaming\npm\claude.cmd"
+    CONTEXT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "context.txt")
 
     def __init__(self):
         self._ocr = WindowsOCR()
+        self._context = self._load_context()
+
+    def _load_context(self) -> str:
+        try:
+            with open(self.CONTEXT_PATH, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            return ""
 
     def analyze(self, content: str, instruction: str, payload_type: PayloadType) -> AnalysisResult:
         try:
@@ -30,18 +40,24 @@ class Analyzer:
                         timestamp=datetime.now()
                     )
                 
-                prompt = f"{instruction}:\n\n{ocr_result.text}"
+                question = ocr_result.text
                 query_display = "[Image → OCR]"
             else:
-                prompt = f"{instruction}:\n\n{content}"
+                question = content
                 query_display = content
+
+            if self._context:
+                prompt = f"{self._context}\n\n---\n\n{instruction}\n\nQuestion: {question}"
+            else:
+                prompt = f"{instruction}:\n\n{question}"
 
             process = subprocess.Popen(
                 [self.CLAUDE_PATH],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             stdout, stderr = process.communicate(input=prompt, timeout=120)
 

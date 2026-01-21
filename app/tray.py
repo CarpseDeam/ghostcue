@@ -199,7 +199,7 @@ class FloatingToolbar(QWidget):
         main_layout.addWidget(self._container)
 
     def _on_snip_click(self):
-        subprocess.run(['explorer', 'ms-screenclip:'], shell=True)
+        subprocess.run(['explorer', 'ms-screenclip:'], shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
     def _on_audio_click(self):
         if self._on_audio_callback:
@@ -416,7 +416,7 @@ class TrayApp:
 
                     analysis = self._analyzer.analyze(
                         transcript,
-                        "Answer this question directly and concisely. Be brief.",
+                        "Answer this interview question concisely and confidently.",
                         PayloadType.TEXT
                     )
                     self._signals.audio_complete.emit(analysis.response)
