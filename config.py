@@ -1,4 +1,4 @@
-import tempfile
+import os
 from dataclasses import dataclass
 
 
@@ -8,5 +8,10 @@ class Config:
     widget_size: int = 28
     typing_speed: float = 0.045
     typing_variance: float = 0.025
-    image_temp_dir: str = tempfile.gettempdir()
+    image_temp_dir: str = os.path.join(os.path.expanduser("~"), ".cliphelper_temp")
     image_widget_color: str = "#9b59b6"
+    overlay_opacity: float = 0.85
+    overlay_timeout_ms: int = 0
+    overlay_font_size: int = 11
+    overlay_width: int = 600
+    stealth_enabled: bool = True

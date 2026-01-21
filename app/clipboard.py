@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Callable, Optional
 import threading
 import time
-import tempfile
 import os
 
 import win32clipboard
@@ -13,16 +12,14 @@ from contracts import ClipboardPayload, PayloadType
 
 
 class ClipboardMonitor:
-    def __init__(self, on_text_change: Callable[[ClipboardPayload], None], 
-                 on_image_change: Callable[[ClipboardPayload], None]):
-        self._on_text_change = on_text_change
-        self._on_image_change = on_image_change
+    def __init__(self, on_change: Callable[[ClipboardPayload], None]):
+        self._on_change = on_change
         self._last_text: Optional[str] = None
         self._last_image_hash: Optional[int] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
-        self._snip_mode = False
-        self._temp_dir = tempfile.mkdtemp(prefix="cliphelper_")
+        self._temp_dir = os.path.join(os.path.expanduser("~"), ".cliphelper_temp")
+        os.makedirs(self._temp_dir, exist_ok=True)
 
     def _get_clipboard_text(self) -> Optional[str]:
         try:
@@ -37,41 +34,38 @@ class ClipboardMonitor:
             pass
         return None
 
-    def _get_clipboard_image(self) -> Optional[str]:
+    def _get_clipboard_image(self) -> Optional[tuple]:
         try:
             img = ImageGrab.grabclipboard()
             if img is not None and hasattr(img, 'save'):
-                img_hash = hash(img.tobytes())
-                if img_hash != self._last_image_hash:
-                    self._last_image_hash = img_hash
-                    path = os.path.join(self._temp_dir, f"snip_{int(time.time())}.png")
-                    img.save(path, "PNG")
-                    return path
+                return (img, hash(img.tobytes()))
         except Exception:
             pass
         return None
 
-    def trigger_snip_mode(self):
-        self._snip_mode = True
-        self._last_image_hash = None
-
     def _poll_loop(self):
         self._last_text = self._get_clipboard_text()
+        image_result = self._get_clipboard_image()
+        if image_result:
+            self._last_image_hash = image_result[1]
         while self._running:
             time.sleep(0.1)
-            
-            if self._snip_mode:
-                image_path = self._get_clipboard_image()
-                if image_path:
-                    self._snip_mode = False
+
+            image_result = self._get_clipboard_image()
+            if image_result:
+                img, img_hash = image_result
+                if img_hash != self._last_image_hash:
+                    self._last_image_hash = img_hash
+                    path = os.path.join(self._temp_dir, f"snip_{int(time.time())}.png")
+                    img.save(path, "PNG")
                     payload = ClipboardPayload(
-                        content=image_path,
+                        content=path,
                         payload_type=PayloadType.IMAGE,
                         timestamp=datetime.now()
                     )
-                    self._on_image_change(payload)
-                continue
-            
+                    self._on_change(payload)
+                    continue
+
             current_text = self._get_clipboard_text()
             if current_text and current_text != self._last_text:
                 self._last_text = current_text
@@ -80,7 +74,7 @@ class ClipboardMonitor:
                     payload_type=PayloadType.TEXT,
                     timestamp=datetime.now()
                 )
-                self._on_text_change(payload)
+                self._on_change(payload)
 
     def start(self):
         if self._running:

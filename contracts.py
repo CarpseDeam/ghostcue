@@ -21,3 +21,9 @@ class AnalysisResult:
     query: str
     response: str
     timestamp: datetime
+
+
+@dataclass(frozen=True)
+class AudioPayload:
+    audio_path: str
+    duration_seconds: float
