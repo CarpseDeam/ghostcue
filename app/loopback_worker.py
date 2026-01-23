@@ -49,7 +49,7 @@ def _convert_to_int16_bytes(audio_data: NDArray[np.float64]) -> bytes:
 
 def run_capture_loop(
     output_queue: multiprocessing.Queue[MessageType],
-    input_queue: multiprocessing.Queue[None],
+    input_queue: multiprocessing.Queue[str],
     config: WorkerConfig,
 ) -> None:
     output_queue.put(("debug", "Worker process started"))
@@ -72,28 +72,40 @@ def run_capture_loop(
         with loopback.recorder(samplerate=config.source_sample_rate) as mic:
             output_queue.put(("debug", "Recorder context entered"))
             output_queue.put(("ready", None))
-            output_queue.put(("debug", "Ready signal sent"))
+            output_queue.put(("debug", "Ready signal sent, starting in PAUSED state"))
 
+            is_capturing = False
             chunk_count = 0
+
             while True:
                 try:
                     signal = input_queue.get_nowait()
-                    if signal is None:
+                    if signal == "stop":
+                        output_queue.put(("debug", "Stop signal received, exiting"))
                         break
+                    elif signal == "resume":
+                        is_capturing = True
+                        chunk_count = 0
+                        output_queue.put(("debug", "Capture RESUMED"))
+                    elif signal == "pause":
+                        is_capturing = False
+                        output_queue.put(("debug", "Capture PAUSED"))
                 except Exception:
                     pass
 
                 chunk = mic.record(numframes=frames_per_chunk)
-                mono = _convert_to_mono(chunk)
-                chunk_count += 1
 
-                if chunk_count == 1 or chunk_count % 50 == 0:
-                    rms = float(np.sqrt(np.mean(mono ** 2)))
-                    output_queue.put(("debug", f"Chunk {chunk_count}: RMS={rms:.6f}"))
+                if is_capturing:
+                    mono = _convert_to_mono(chunk)
+                    chunk_count += 1
 
-                resampled = _resample_audio(mono, frames_per_chunk, target_frames)
-                audio_bytes = _convert_to_int16_bytes(resampled)
-                output_queue.put(("audio", audio_bytes))
+                    if chunk_count == 1 or chunk_count % 50 == 0:
+                        rms = float(np.sqrt(np.mean(mono ** 2)))
+                        output_queue.put(("debug", f"Chunk {chunk_count}: RMS={rms:.6f}"))
+
+                    resampled = _resample_audio(mono, frames_per_chunk, target_frames)
+                    audio_bytes = _convert_to_int16_bytes(resampled)
+                    output_queue.put(("audio", audio_bytes))
 
     except Exception as e:
         output_queue.put(("error", f"Capture error: {e}"))

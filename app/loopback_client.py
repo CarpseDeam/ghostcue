@@ -4,12 +4,13 @@ import asyncio
 import json
 import multiprocessing
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional
 
 import websockets
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from app.loopback_worker import MessageType, WorkerConfig, run_capture_loop
 
@@ -19,7 +20,7 @@ class LoopbackConfig:
     source_sample_rate: int = 48000
     target_sample_rate: int = 16000
     channels: int = 1
-    chunk_duration: float = 0.1
+    chunk_duration: float = 0.05
     encoding: str = "linear16"
     model: str = "nova-3"
     language: str = "en"
@@ -33,6 +34,7 @@ class LoopbackStreamingClient(QObject):
     interim_interviewer = pyqtSignal(str)
     final_interviewer = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
+    silence_detected = pyqtSignal()
 
     def __init__(self, config: Optional[LoopbackConfig] = None) -> None:
         super().__init__()
@@ -42,13 +44,108 @@ class LoopbackStreamingClient(QObject):
         self._websocket: Optional[websockets.WebSocketClientProtocol] = None
         self._process: Optional[multiprocessing.Process] = None
         self._output_queue: Optional[multiprocessing.Queue[MessageType]] = None
-        self._input_queue: Optional[multiprocessing.Queue[None]] = None
+        self._input_queue: Optional[multiprocessing.Queue[str]] = None
         self._running = False
         self._accumulated_transcript = ""
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._queue_reader_task: Optional[asyncio.Task[None]] = None
         self._chunks_received = 0
         self._chunks_sent = 0
+        self._is_warmed = False
+        self._is_capturing = False
+        self._sender_task: Optional[asyncio.Task[None]] = None
+        self._receiver_task: Optional[asyncio.Task[None]] = None
+        self._last_final_time: float = 0.0
+        self._silence_timer: Optional[QTimer] = None
+        self._silence_threshold_ms: int = 1500
+
+    def set_silence_threshold(self, ms: int) -> None:
+        self._silence_threshold_ms = ms
+        print(f"[DEBUG] Silence threshold set to {ms}ms")
+
+    def _start_silence_monitor(self) -> None:
+        if self._silence_timer is None:
+            self._silence_timer = QTimer()
+            self._silence_timer.timeout.connect(self._check_silence)
+        self._last_final_time = time.time()
+        self._silence_timer.start(200)
+        print("[DEBUG] Silence monitor started")
+
+    def _stop_silence_monitor(self) -> None:
+        if self._silence_timer is not None:
+            self._silence_timer.stop()
+            print("[DEBUG] Silence monitor stopped")
+
+    def _check_silence(self) -> None:
+        if not self._is_capturing:
+            return
+        if not self._accumulated_transcript.strip():
+            return
+        elapsed_ms = (time.time() - self._last_final_time) * 1000
+        if elapsed_ms >= self._silence_threshold_ms:
+            print(f"[DEBUG] Silence detected! {elapsed_ms:.0f}ms since last speech, threshold={self._silence_threshold_ms}ms")
+            self._stop_silence_monitor()
+            self.silence_detected.emit()
+
+    async def warm_up(self) -> bool:
+        if self._is_warmed:
+            return True
+
+        if not self._api_key:
+            print("[DEBUG] Cannot warm up: DEEPGRAM_API_KEY not set")
+            return False
+
+        print("[DEBUG] Warming up loopback client...")
+
+        self._output_queue = multiprocessing.Queue()
+        self._input_queue = multiprocessing.Queue()
+
+        worker_config = WorkerConfig(
+            source_sample_rate=self._config.source_sample_rate,
+            target_sample_rate=self._config.target_sample_rate,
+            chunk_duration=self._config.chunk_duration,
+        )
+
+        self._process = multiprocessing.Process(
+            target=run_capture_loop,
+            args=(self._output_queue, self._input_queue, worker_config),
+            daemon=True,
+        )
+        self._process.start()
+        print(f"[DEBUG] Subprocess started with PID: {self._process.pid}")
+
+        ready = await self._wait_for_ready()
+        if not ready:
+            self._terminate_process()
+            return False
+
+        url = self._build_url()
+        headers = {"Authorization": f"Token {self._api_key}"}
+
+        try:
+            self._websocket = await websockets.connect(url, additional_headers=headers)
+            print("[DEBUG] WebSocket connected to Deepgram (pre-warmed)")
+        except Exception as e:
+            print(f"[DEBUG] WebSocket connection failed during warm-up: {e}")
+            self._terminate_process()
+            return False
+
+        self._running = True
+        self._queue_reader_task = asyncio.create_task(self._queue_reader())
+        self._sender_task = asyncio.create_task(self._sender(self._websocket))
+        self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
+
+        self._is_warmed = True
+        print("[DEBUG] Loopback client warmed up and ready!")
+        return True
+
+    def _terminate_process(self) -> None:
+        if self._process is not None and self._process.is_alive():
+            self._process.terminate()
+            self._process.join(timeout=1.0)
+        self._process = None
+        self._output_queue = None
+        self._input_queue = None
 
     def _build_url(self) -> str:
         params = [
@@ -158,6 +255,7 @@ class LoopbackStreamingClient(QObject):
                         if transcript.strip():
                             is_final = data.get("is_final", False)
                             if is_final:
+                                self._last_final_time = time.time()
                                 self._accumulated_transcript += transcript + " "
                                 self.final_interviewer.emit(self._accumulated_transcript.strip())
                             else:
@@ -207,6 +305,29 @@ class LoopbackStreamingClient(QObject):
         return False
 
     async def start_streaming(self) -> None:
+        if not self._is_warmed:
+            print("[DEBUG] Not warmed, falling back to cold start")
+            await self._cold_start_streaming()
+            return
+
+        print("[DEBUG] Starting capture (pre-warmed, instant)")
+        self._accumulated_transcript = ""
+        self._is_capturing = True
+        self._chunks_received = 0
+        self._chunks_sent = 0
+
+        while not self._audio_queue.empty():
+            try:
+                self._audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        if self._input_queue is not None:
+            self._input_queue.put("resume")
+            print("[DEBUG] Resume signal sent to subprocess")
+        self._start_silence_monitor()
+
+    async def _cold_start_streaming(self) -> None:
         if not self._api_key:
             self.error_occurred.emit("DEEPGRAM_API_KEY not set")
             return
@@ -247,6 +368,9 @@ class LoopbackStreamingClient(QObject):
                 self.error_occurred.emit("Failed to initialize audio capture")
             return
 
+        if self._input_queue is not None:
+            self._input_queue.put("resume")
+
         url = self._build_url()
         headers = {"Authorization": f"Token {self._api_key}"}
 
@@ -255,10 +379,11 @@ class LoopbackStreamingClient(QObject):
             print("[DEBUG] WebSocket connected to Deepgram")
 
             self._queue_reader_task = asyncio.create_task(self._queue_reader())
-            sender_task = asyncio.create_task(self._sender(self._websocket))
-            receiver_task = asyncio.create_task(self._receiver(self._websocket))
+            self._sender_task = asyncio.create_task(self._sender(self._websocket))
+            self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
+            self._start_silence_monitor()
 
-            await asyncio.gather(sender_task, receiver_task, self._queue_reader_task)
+            await asyncio.gather(self._sender_task, self._receiver_task, self._queue_reader_task)
 
         except websockets.exceptions.InvalidStatus as e:
             error_msg = f"Connection failed: {e}"
@@ -274,31 +399,46 @@ class LoopbackStreamingClient(QObject):
     def _stop_capture(self) -> None:
         if self._input_queue is not None:
             try:
-                self._input_queue.put_nowait(None)
+                self._input_queue.put("stop")
+            except Exception:
+                pass
+        self._terminate_process()
+
+    async def stop_streaming(self) -> None:
+        self._stop_silence_monitor()
+        print("[DEBUG] Pausing capture")
+        self._is_capturing = False
+
+        if self._input_queue is not None:
+            self._input_queue.put("pause")
+            print("[DEBUG] Pause signal sent to subprocess")
+
+    async def shutdown(self) -> None:
+        self._stop_silence_monitor()
+        print("[DEBUG] Shutting down loopback client")
+        self._running = False
+        self._is_warmed = False
+        self._is_capturing = False
+
+        for task in [self._queue_reader_task, self._sender_task, self._receiver_task]:
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        self._queue_reader_task = None
+        self._sender_task = None
+        self._receiver_task = None
+
+        if self._input_queue is not None:
+            try:
+                self._input_queue.put("stop")
             except Exception:
                 pass
 
-        if self._process is not None and self._process.is_alive():
-            self._process.join(timeout=1.0)
-            if self._process.is_alive():
-                self._process.terminate()
-
-        self._process = None
-        self._output_queue = None
-        self._input_queue = None
-
-    async def stop_streaming(self) -> None:
-        self._running = False
-
-        if self._queue_reader_task is not None:
-            self._queue_reader_task.cancel()
-            try:
-                await self._queue_reader_task
-            except asyncio.CancelledError:
-                pass
-            self._queue_reader_task = None
-
-        self._stop_capture()
+        self._terminate_process()
 
         if self._websocket:
             try:
@@ -306,6 +446,8 @@ class LoopbackStreamingClient(QObject):
             except Exception:
                 pass
             self._websocket = None
+
+        print("[DEBUG] Loopback client shutdown complete")
 
     def get_transcript(self) -> str:
         return self._accumulated_transcript.strip()

@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QPushButton
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
-from PyQt6.QtGui import QIcon, QCursor, QPixmap, QPainter, QColor
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor
 
 from config import Config
 from contracts import ClipboardPayload, PayloadType
@@ -21,6 +21,7 @@ from app.stealth import make_stealth
 from app.overlay import StealthOverlay
 from app.deepgram_client import DeepgramStreamingClient
 from app.claude_client import ClaudeStreamingClient
+from app.loopback_client import LoopbackStreamingClient
 
 
 class SignalBridge(QObject):
@@ -30,118 +31,22 @@ class SignalBridge(QObject):
     streaming_error = pyqtSignal(str)
 
 
-class FloatingWidget(QWidget):
-    def __init__(self, on_submit: Callable[[str], None], config: Config) -> None:
-        super().__init__()
-        self._on_submit = on_submit
-        self._config = config
-        self._setup_ui()
-        self._setup_timer()
-
-    def _setup_ui(self) -> None:
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        self._container = QWidget()
-        self._container.setStyleSheet("background-color: #2d2d2d; border-radius: 6px;")
-
-        layout = QHBoxLayout(self._container)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
-
-        self._solve_btn = QPushButton("S")
-        self._solve_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2ecc71;
-            }
-        """)
-        self._solve_btn.setFixedSize(28, 28)
-        self._solve_btn.clicked.connect(self._on_solve)
-        layout.addWidget(self._solve_btn)
-
-        self._explain_btn = QPushButton("A")
-        self._explain_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #5dade2;
-            }
-        """)
-        self._explain_btn.setFixedSize(28, 28)
-        self._explain_btn.clicked.connect(self._on_explain)
-        layout.addWidget(self._explain_btn)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self._container)
-
-    def _setup_timer(self) -> None:
-        self._hide_timer = QTimer(self)
-        self._hide_timer.timeout.connect(self.hide)
-        self._hide_timer.setSingleShot(True)
-
-    def _on_solve(self) -> None:
-        self._hide_timer.stop()
-        self._on_submit("DO NOT edit any files. DO NOT use any tools. Just analyze this problem and respond with ONLY the solution code. Output the code directly in your response, nothing else.")
-
-    def _on_explain(self) -> None:
-        self._hide_timer.stop()
-        self._on_submit("DO NOT edit any files. DO NOT use any tools. Explain this problem clearly and teach me the concept. Output your explanation directly in your response.")
-
-    def show_at_cursor(self) -> None:
-        pos = QCursor.pos()
-        self.move(pos.x() + 15, pos.y() + 15)
-        self.adjustSize()
-        self.show()
-        make_stealth(self)
-        self._hide_timer.start(self._config.widget_timeout_ms)
-
-    def set_processing(self, processing: bool) -> None:
-        self._solve_btn.setEnabled(not processing)
-        self._explain_btn.setEnabled(not processing)
-        if processing:
-            self._solve_btn.setText("...")
-            self._explain_btn.setText("...")
-        else:
-            self._solve_btn.setText("S")
-            self._explain_btn.setText("A")
-
-    def enterEvent(self, event) -> None:
-        self._hide_timer.stop()
-
-    def leaveEvent(self, event) -> None:
-        if self.isVisible():
-            self._hide_timer.start(self._config.widget_timeout_ms)
-
-    def keyPressEvent(self, event) -> None:
-        if event.key() == Qt.Key.Key_Escape:
-            self.hide()
-
-
 class FloatingToolbar(QWidget):
-    def __init__(self, on_audio_click: Optional[Callable[[], None]] = None) -> None:
+    def __init__(
+        self,
+        on_audio_click: Optional[Callable[[], None]] = None,
+        on_solve_click: Optional[Callable[[], None]] = None,
+        on_explain_click: Optional[Callable[[], None]] = None,
+        config: Config = None
+    ) -> None:
         super().__init__()
         self._drag_pos: QPoint | None = None
         self._on_audio_callback = on_audio_click
+        self._on_solve_callback = on_solve_click
+        self._on_explain_callback = on_explain_click
+        self._config = config or Config()
         self._is_recording = False
+        self._clipboard_ready = False
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -159,21 +64,23 @@ class FloatingToolbar(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
+        btn_size = self._config.button_size
+
         self._snip_btn = QPushButton("\u25f2")
         self._snip_btn.setStyleSheet("""
             QPushButton {
                 background-color: #9b59b6;
                 color: white;
                 border: none;
-                border-radius: 4px;
-                font-size: 14px;
+                border-radius: 6px;
+                font-size: 18px;
                 font-weight: bold;
             }
             QPushButton:hover {
                 background-color: #a569c6;
             }
         """)
-        self._snip_btn.setFixedSize(28, 28)
+        self._snip_btn.setFixedSize(btn_size, btn_size)
         self._snip_btn.clicked.connect(self._on_snip_click)
         layout.addWidget(self._snip_btn)
 
@@ -183,18 +90,32 @@ class FloatingToolbar(QWidget):
                 background-color: #e74c3c;
                 color: white;
                 border: none;
-                border-radius: 4px;
-                font-size: 14px;
+                border-radius: 6px;
+                font-size: 18px;
                 font-weight: bold;
             }
             QPushButton:hover {
                 background-color: #f75c4c;
             }
         """)
-        self._audio_btn.setFixedSize(28, 28)
+        self._audio_btn.setFixedSize(btn_size, btn_size)
         self._audio_btn.setToolTip("Click to record")
         self._audio_btn.clicked.connect(self._on_audio_click)
         layout.addWidget(self._audio_btn)
+
+        self._solve_btn = QPushButton("S")
+        self._solve_btn.setFixedSize(btn_size, btn_size)
+        self._solve_btn.setEnabled(False)
+        self._solve_btn.clicked.connect(self._on_solve_click)
+        self._update_solve_style()
+        layout.addWidget(self._solve_btn)
+
+        self._explain_btn = QPushButton("A")
+        self._explain_btn.setFixedSize(btn_size, btn_size)
+        self._explain_btn.setEnabled(False)
+        self._explain_btn.clicked.connect(self._on_explain_click)
+        self._update_explain_style()
+        layout.addWidget(self._explain_btn)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -207,31 +128,114 @@ class FloatingToolbar(QWidget):
         if self._on_audio_callback:
             self._on_audio_callback()
 
-    def set_recording_state(self, is_recording: bool) -> None:
-        self._is_recording = is_recording
-        if is_recording:
-            self._audio_btn.setStyleSheet("""
+    def _on_solve_click(self) -> None:
+        if self._on_solve_callback and self._clipboard_ready:
+            self._on_solve_callback()
+
+    def _on_explain_click(self) -> None:
+        if self._on_explain_callback and self._clipboard_ready:
+            self._on_explain_callback()
+
+    def _update_solve_style(self) -> None:
+        if self._solve_btn.isEnabled():
+            self._solve_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #ff6b6b;
+                    background-color: #27ae60;
                     color: white;
                     border: none;
-                    border-radius: 4px;
-                    font-size: 14px;
+                    border-radius: 6px;
+                    font-size: 16px;
                     font-weight: bold;
                 }
                 QPushButton:hover {
-                    background-color: #ff8b8b;
+                    background-color: #2ecc71;
                 }
             """)
-            self._audio_btn.setToolTip("Recording... Click to stop")
         else:
+            self._solve_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #555555;
+                    color: #888888;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: bold;
+                }
+            """)
+
+    def _update_explain_style(self) -> None:
+        if self._explain_btn.isEnabled():
+            self._explain_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3498db;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #5dade2;
+                }
+            """)
+        else:
+            self._explain_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #555555;
+                    color: #888888;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: bold;
+                }
+            """)
+
+    def set_clipboard_ready(self, ready: bool) -> None:
+        self._clipboard_ready = ready
+        self._solve_btn.setEnabled(ready)
+        self._explain_btn.setEnabled(ready)
+        self._update_solve_style()
+        self._update_explain_style()
+
+    def set_processing(self, processing: bool) -> None:
+        self._solve_btn.setEnabled(not processing and self._clipboard_ready)
+        self._explain_btn.setEnabled(not processing and self._clipboard_ready)
+        if processing:
+            self._solve_btn.setText("...")
+            self._explain_btn.setText("...")
+        else:
+            self._solve_btn.setText("S")
+            self._explain_btn.setText("A")
+        self._update_solve_style()
+        self._update_explain_style()
+
+    def set_recording_state(self, is_recording: bool) -> None:
+        self._is_recording = is_recording
+        if is_recording:
+            self._audio_btn.setText("■")
+            self._audio_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #27ae60;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 18px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #2ecc71;
+                }
+            """)
+            self._audio_btn.setToolTip("Listening... Click to stop")
+        else:
+            self._audio_btn.setText("●")
             self._audio_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #e74c3c;
                     color: white;
                     border: none;
-                    border-radius: 4px;
-                    font-size: 14px;
+                    border-radius: 6px;
+                    font-size: 18px;
                     font-weight: bold;
                 }
                 QPushButton:hover {
@@ -245,7 +249,13 @@ class FloatingToolbar(QWidget):
         if processing:
             self._audio_btn.setText("...")
         else:
-            self._audio_btn.setText("\u25cf")
+            self.set_recording_state(False)
+
+    def position_near_overlay(self, overlay_x: int, overlay_y: int, overlay_width: int) -> None:
+        self.adjustSize()
+        x = overlay_x + overlay_width + 10
+        y = overlay_y
+        self.move(x, y)
 
     def show_in_corner(self) -> None:
         self.adjustSize()
@@ -292,12 +302,23 @@ class TrayApp:
 
         self._deepgram = DeepgramStreamingClient()
         self._claude = ClaudeStreamingClient()
+        self._loopback = LoopbackStreamingClient()
+        self._loopback.set_silence_threshold(self._config.silence_threshold_ms)
         self._connect_streaming_signals()
+        self._connect_loopback_signals()
 
         self._setup_tray()
-        self._setup_widget()
         self._setup_toolbar()
         self._setup_clipboard_monitor()
+
+        asyncio.run_coroutine_threadsafe(self._warm_up_loopback(), self._loop)
+
+    async def _warm_up_loopback(self) -> None:
+        success = await self._loopback.warm_up()
+        if success:
+            print("[DEBUG] Loopback pre-warmed successfully")
+        else:
+            print("[DEBUG] Loopback warm-up failed, will use cold start")
 
     def _connect_streaming_signals(self) -> None:
         self._deepgram.interim_transcript.connect(self._overlay.interim_transcript.emit)
@@ -307,6 +328,12 @@ class TrayApp:
         self._claude.text_chunk.connect(self._overlay.text_chunk_received.emit)
         self._claude.response_complete.connect(self._on_response_complete)
         self._claude.error_occurred.connect(self._on_streaming_error)
+
+    def _connect_loopback_signals(self) -> None:
+        self._loopback.interim_interviewer.connect(self._on_interim_update)
+        self._loopback.final_interviewer.connect(self._on_interim_update)
+        self._loopback.error_occurred.connect(self._on_streaming_error)
+        self._loopback.silence_detected.connect(self._on_silence_detected)
 
     def _create_icon(self) -> QIcon:
         pixmap = QPixmap(32, 32)
@@ -333,11 +360,13 @@ class TrayApp:
         self._tray.setContextMenu(menu)
         self._tray.show()
 
-    def _setup_widget(self) -> None:
-        self._widget = FloatingWidget(self._on_widget_submit, self._config)
-
     def _setup_toolbar(self) -> None:
-        self._toolbar = FloatingToolbar(on_audio_click=self._on_audio_button_click)
+        self._toolbar = FloatingToolbar(
+            on_audio_click=self._on_audio_button_click,
+            on_solve_click=self._on_solve_click,
+            on_explain_click=self._on_explain_click,
+            config=self._config
+        )
         self._toolbar.show_in_corner()
 
     def _setup_clipboard_monitor(self) -> None:
@@ -349,42 +378,88 @@ class TrayApp:
 
     def _on_clipboard_signal(self, payload: ClipboardPayload) -> None:
         self._pending_payload = payload
-        self._widget.set_processing(False)
-        self._widget.show_at_cursor()
+        self._toolbar.set_clipboard_ready(True)
+        self._toolbar.set_processing(False)
 
-    def _on_widget_submit(self, instruction: str) -> None:
+    def _on_solve_click(self) -> None:
         if not self._pending_payload:
             return
+        self._toolbar.set_processing(True)
+        instruction = "DO NOT edit any files. DO NOT use any tools. Just analyze this problem and respond with ONLY the solution code. Output the code directly in your response, nothing else."
+        self._process_clipboard_request(instruction)
 
-        self._widget.set_processing(True)
+    def _on_explain_click(self) -> None:
+        if not self._pending_payload:
+            return
+        self._toolbar.set_processing(True)
+        instruction = "DO NOT edit any files. DO NOT use any tools. Explain this problem clearly and teach me the concept. Output your explanation directly in your response."
+        self._process_clipboard_request(instruction)
+
+    def _process_clipboard_request(self, instruction: str) -> None:
         payload = self._pending_payload
-        self._widget.hide()
-
         def process() -> None:
             result = self._analyzer.analyze(payload.content, instruction, payload.payload_type)
             self._signals.analysis_complete.emit(result.response)
-
         thread = threading.Thread(target=process, daemon=True)
         thread.start()
 
     def _on_analysis_complete(self, response: str) -> None:
-        self._widget.set_processing(False)
+        self._toolbar.set_processing(False)
         if self._config.stealth_enabled:
             self._overlay.show_response(response)
+            self._toolbar.position_near_overlay(
+                self._overlay.x(),
+                self._overlay.y(),
+                self._overlay.width()
+            )
         else:
             self._typer.type_to_notepad(response)
+
+    def _on_interim_update(self, text: str) -> None:
+        if text.strip():
+            self._overlay.show_response(f"🎤 {text}")
+
+    def _on_silence_detected(self) -> None:
+        if not self._is_recording:
+            return
+        print("[DEBUG] Silence auto-detected, sending to Claude")
+        self._is_recording = False
+        self._toolbar.set_recording_state(False)
+        asyncio.run_coroutine_threadsafe(self._loopback.stop_streaming(), self._loop)
+        transcript = self._loopback.get_transcript()
+        if transcript.strip():
+            self._toolbar.set_audio_processing(True)
+            self._overlay.show_response("⏸️ Processing...")
+            self._overlay.start_streaming_response()
+            asyncio.run_coroutine_threadsafe(
+                self._claude.stream_response(transcript),
+                self._loop
+            )
+        else:
+            self._overlay.show_response("No speech detected")
 
     def _on_audio_button_click(self) -> None:
         if not self._is_recording:
             self._is_recording = True
             self._toolbar.set_recording_state(True)
             self._overlay.clear_and_show()
-            asyncio.run_coroutine_threadsafe(self._deepgram.start_streaming(), self._loop)
+            self._overlay.show_response("🎤 Listening...")
+            asyncio.run_coroutine_threadsafe(self._loopback.start_streaming(), self._loop)
         else:
             self._is_recording = False
             self._toolbar.set_recording_state(False)
-            self._toolbar.set_audio_processing(True)
-            asyncio.run_coroutine_threadsafe(self._deepgram.stop_streaming(), self._loop)
+            asyncio.run_coroutine_threadsafe(self._loopback.stop_streaming(), self._loop)
+
+            transcript = self._loopback.get_transcript()
+            if transcript.strip():
+                self._toolbar.set_audio_processing(True)
+                self._overlay.start_streaming_response()
+                asyncio.run_coroutine_threadsafe(
+                    self._claude.stream_response(transcript),
+                    self._loop
+                )
+            else:
+                self._overlay.show_response("No speech detected")
 
     def _on_final_transcript(self, transcript: str) -> None:
         if not transcript.strip():
@@ -394,6 +469,15 @@ class TrayApp:
 
         self._overlay.start_streaming_response()
         asyncio.run_coroutine_threadsafe(self._claude.stream_response(transcript), self._loop)
+
+    def _on_interviewer_question(self, question: str) -> None:
+        if not question.strip():
+            return
+        self._overlay.start_streaming_response()
+        asyncio.run_coroutine_threadsafe(
+            self._claude.stream_response(question),
+            self._loop
+        )
 
     def _on_response_complete(self) -> None:
         self._toolbar.set_audio_processing(False)
@@ -416,6 +500,7 @@ class TrayApp:
 
     def _quit(self) -> None:
         self._monitor.stop()
+        asyncio.run_coroutine_threadsafe(self._loopback.shutdown(), self._loop)
         asyncio.run_coroutine_threadsafe(self._deepgram.stop_streaming(), self._loop)
         self._overlay.hide()
         self._toolbar.hide()
