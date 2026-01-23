@@ -5,3 +5,10 @@ Pillow>=10.0.0
 winocr>=0.0.3
 soundcard
 httpx
+deepgram-sdk>=3.0.0
+python-dotenv>=1.0.0
+pyaudio>=0.2.14
+anthropic>=0.40.0
+qasync>=0.27.0
+websockets>=15.0
+scipy>=1.11.0

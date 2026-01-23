@@ -1,8 +1,8 @@
-import os
+from __future__ import annotations
+
+import asyncio
 import subprocess
-import sys
 import threading
-import multiprocessing
 from typing import Optional, Callable
 
 from PyQt6.QtWidgets import (
@@ -19,24 +19,26 @@ from app.analyzer import Analyzer
 from app.typer import HumanTyper
 from app.stealth import make_stealth
 from app.overlay import StealthOverlay
-from app.transcriber import Transcriber
+from app.deepgram_client import DeepgramStreamingClient
+from app.claude_client import ClaudeStreamingClient
 
 
 class SignalBridge(QObject):
     clipboard_changed = pyqtSignal(object)
     analysis_complete = pyqtSignal(str)
     audio_complete = pyqtSignal(str)
+    streaming_error = pyqtSignal(str)
 
 
 class FloatingWidget(QWidget):
-    def __init__(self, on_submit: Callable[[str], None], config: Config):
+    def __init__(self, on_submit: Callable[[str], None], config: Config) -> None:
         super().__init__()
         self._on_submit = on_submit
         self._config = config
         self._setup_ui()
         self._setup_timer()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
@@ -91,20 +93,20 @@ class FloatingWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self._container)
 
-    def _setup_timer(self):
+    def _setup_timer(self) -> None:
         self._hide_timer = QTimer(self)
         self._hide_timer.timeout.connect(self.hide)
         self._hide_timer.setSingleShot(True)
 
-    def _on_solve(self):
+    def _on_solve(self) -> None:
         self._hide_timer.stop()
         self._on_submit("DO NOT edit any files. DO NOT use any tools. Just analyze this problem and respond with ONLY the solution code. Output the code directly in your response, nothing else.")
 
-    def _on_explain(self):
+    def _on_explain(self) -> None:
         self._hide_timer.stop()
         self._on_submit("DO NOT edit any files. DO NOT use any tools. Explain this problem clearly and teach me the concept. Output your explanation directly in your response.")
 
-    def show_at_cursor(self):
+    def show_at_cursor(self) -> None:
         pos = QCursor.pos()
         self.move(pos.x() + 15, pos.y() + 15)
         self.adjustSize()
@@ -112,7 +114,7 @@ class FloatingWidget(QWidget):
         make_stealth(self)
         self._hide_timer.start(self._config.widget_timeout_ms)
 
-    def set_processing(self, processing: bool):
+    def set_processing(self, processing: bool) -> None:
         self._solve_btn.setEnabled(not processing)
         self._explain_btn.setEnabled(not processing)
         if processing:
@@ -122,27 +124,27 @@ class FloatingWidget(QWidget):
             self._solve_btn.setText("S")
             self._explain_btn.setText("A")
 
-    def enterEvent(self, event):
+    def enterEvent(self, event) -> None:
         self._hide_timer.stop()
 
-    def leaveEvent(self, event):
+    def leaveEvent(self, event) -> None:
         if self.isVisible():
             self._hide_timer.start(self._config.widget_timeout_ms)
 
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self.hide()
 
 
 class FloatingToolbar(QWidget):
-    def __init__(self, on_audio_click: Optional[Callable[[], None]] = None):
+    def __init__(self, on_audio_click: Optional[Callable[[], None]] = None) -> None:
         super().__init__()
         self._drag_pos: QPoint | None = None
         self._on_audio_callback = on_audio_click
         self._is_recording = False
         self._setup_ui()
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
@@ -157,7 +159,7 @@ class FloatingToolbar(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        self._snip_btn = QPushButton("◲")
+        self._snip_btn = QPushButton("\u25f2")
         self._snip_btn.setStyleSheet("""
             QPushButton {
                 background-color: #9b59b6;
@@ -175,7 +177,7 @@ class FloatingToolbar(QWidget):
         self._snip_btn.clicked.connect(self._on_snip_click)
         layout.addWidget(self._snip_btn)
 
-        self._audio_btn = QPushButton("●")
+        self._audio_btn = QPushButton("\u25cf")
         self._audio_btn.setStyleSheet("""
             QPushButton {
                 background-color: #e74c3c;
@@ -198,14 +200,14 @@ class FloatingToolbar(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self._container)
 
-    def _on_snip_click(self):
+    def _on_snip_click(self) -> None:
         subprocess.run(['explorer', 'ms-screenclip:'], shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
 
-    def _on_audio_click(self):
+    def _on_audio_click(self) -> None:
         if self._on_audio_callback:
             self._on_audio_callback()
 
-    def set_recording_state(self, is_recording: bool):
+    def set_recording_state(self, is_recording: bool) -> None:
         self._is_recording = is_recording
         if is_recording:
             self._audio_btn.setStyleSheet("""
@@ -238,14 +240,14 @@ class FloatingToolbar(QWidget):
             """)
             self._audio_btn.setToolTip("Click to record")
 
-    def set_audio_processing(self, processing: bool):
+    def set_audio_processing(self, processing: bool) -> None:
         self._audio_btn.setEnabled(not processing)
         if processing:
             self._audio_btn.setText("...")
         else:
             self._audio_btn.setText("\u25cf")
 
-    def show_in_corner(self):
+    def show_in_corner(self) -> None:
         self.adjustSize()
         screen = QApplication.primaryScreen().availableGeometry()
         x = screen.left() + 20
@@ -254,49 +256,57 @@ class FloatingToolbar(QWidget):
         self.show()
         make_stealth(self)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event) -> None:
         if self._drag_pos and event.buttons() == Qt.MouseButton.LeftButton:
             self.move(event.globalPosition().toPoint() - self._drag_pos)
             event.accept()
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event) -> None:
         self._drag_pos = None
 
 
 class TrayApp:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, loop: asyncio.AbstractEventLoop) -> None:
         self._config = config
-        self._app = QApplication(sys.argv)
-        self._app.setQuitOnLastWindowClosed(False)
+        self._loop = loop
+        self._app = QApplication.instance()
 
         self._signals = SignalBridge()
         self._signals.clipboard_changed.connect(self._on_clipboard_signal)
         self._signals.analysis_complete.connect(self._on_analysis_complete)
         self._signals.audio_complete.connect(self._on_audio_complete)
+        self._signals.streaming_error.connect(self._on_streaming_error)
 
-        self._transcriber = Transcriber()
         self._analyzer = Analyzer()
         self._typer = HumanTyper()
         self._is_recording = False
         self._pending_payload: Optional[ClipboardPayload] = None
-
-        self._audio_process: Optional[multiprocessing.Process] = None
-        self._command_queue: Optional[multiprocessing.Queue] = None
-        self._result_queue: Optional[multiprocessing.Queue] = None
+        self._streaming_task: Optional[asyncio.Task] = None
 
         self._overlay = StealthOverlay(config)
 
-        self._start_audio_worker()
+        self._deepgram = DeepgramStreamingClient()
+        self._claude = ClaudeStreamingClient()
+        self._connect_streaming_signals()
 
         self._setup_tray()
         self._setup_widget()
         self._setup_toolbar()
         self._setup_clipboard_monitor()
+
+    def _connect_streaming_signals(self) -> None:
+        self._deepgram.interim_transcript.connect(self._overlay.interim_transcript.emit)
+        self._deepgram.final_transcript.connect(self._on_final_transcript)
+        self._deepgram.error_occurred.connect(self._on_streaming_error)
+
+        self._claude.text_chunk.connect(self._overlay.text_chunk_received.emit)
+        self._claude.response_complete.connect(self._on_response_complete)
+        self._claude.error_occurred.connect(self._on_streaming_error)
 
     def _create_icon(self) -> QIcon:
         pixmap = QPixmap(32, 32)
@@ -312,7 +322,7 @@ class TrayApp:
         painter.end()
         return QIcon(pixmap)
 
-    def _setup_tray(self):
+    def _setup_tray(self) -> None:
         self._tray = QSystemTrayIcon(self._create_icon(), self._app)
         self._tray.setToolTip("Clipboard Helper")
 
@@ -323,26 +333,26 @@ class TrayApp:
         self._tray.setContextMenu(menu)
         self._tray.show()
 
-    def _setup_widget(self):
+    def _setup_widget(self) -> None:
         self._widget = FloatingWidget(self._on_widget_submit, self._config)
 
-    def _setup_toolbar(self):
+    def _setup_toolbar(self) -> None:
         self._toolbar = FloatingToolbar(on_audio_click=self._on_audio_button_click)
         self._toolbar.show_in_corner()
 
-    def _setup_clipboard_monitor(self):
+    def _setup_clipboard_monitor(self) -> None:
         self._monitor = ClipboardMonitor(self._on_clipboard_change)
         self._monitor.start()
 
-    def _on_clipboard_change(self, payload: ClipboardPayload):
+    def _on_clipboard_change(self, payload: ClipboardPayload) -> None:
         self._signals.clipboard_changed.emit(payload)
 
-    def _on_clipboard_signal(self, payload: ClipboardPayload):
+    def _on_clipboard_signal(self, payload: ClipboardPayload) -> None:
         self._pending_payload = payload
         self._widget.set_processing(False)
         self._widget.show_at_cursor()
 
-    def _on_widget_submit(self, instruction: str):
+    def _on_widget_submit(self, instruction: str) -> None:
         if not self._pending_payload:
             return
 
@@ -350,84 +360,53 @@ class TrayApp:
         payload = self._pending_payload
         self._widget.hide()
 
-        def process():
+        def process() -> None:
             result = self._analyzer.analyze(payload.content, instruction, payload.payload_type)
             self._signals.analysis_complete.emit(result.response)
 
         thread = threading.Thread(target=process, daemon=True)
         thread.start()
 
-    def _on_analysis_complete(self, response: str):
+    def _on_analysis_complete(self, response: str) -> None:
         self._widget.set_processing(False)
         if self._config.stealth_enabled:
             self._overlay.show_response(response)
         else:
             self._typer.type_to_notepad(response)
 
-    def _start_audio_worker(self):
-        from app.audio_worker import worker_main
-        self._command_queue = multiprocessing.Queue()
-        self._result_queue = multiprocessing.Queue()
-        self._audio_process = multiprocessing.Process(
-            target=worker_main,
-            args=(self._command_queue, self._result_queue, self._config.image_temp_dir),
-            daemon=True
-        )
-        self._audio_process.start()
-
-    def _ensure_audio_worker(self):
-        if self._audio_process is None or not self._audio_process.is_alive():
-            self._start_audio_worker()
-
-    def _on_audio_button_click(self):
-        from app.audio_worker import AudioCommand, AudioMessage, AudioResult
-        self._ensure_audio_worker()
-
+    def _on_audio_button_click(self) -> None:
         if not self._is_recording:
-            self._command_queue.put(AudioMessage(command=AudioCommand.START))
             self._is_recording = True
             self._toolbar.set_recording_state(True)
+            self._overlay.clear_and_show()
+            asyncio.run_coroutine_threadsafe(self._deepgram.start_streaming(), self._loop)
         else:
             self._is_recording = False
             self._toolbar.set_recording_state(False)
             self._toolbar.set_audio_processing(True)
+            asyncio.run_coroutine_threadsafe(self._deepgram.stop_streaming(), self._loop)
 
-            self._command_queue.put(AudioMessage(command=AudioCommand.STOP))
+    def _on_final_transcript(self, transcript: str) -> None:
+        if not transcript.strip():
+            self._toolbar.set_audio_processing(False)
+            self._overlay.show_error("No speech detected")
+            return
 
-            def wait_for_result():
-                from app.audio_worker import AudioResult
-                try:
-                    result: AudioResult = self._result_queue.get(timeout=60)
+        self._overlay.start_streaming_response()
+        asyncio.run_coroutine_threadsafe(self._claude.stream_response(transcript), self._loop)
 
-                    if not result.success or not result.audio_path:
-                        self._signals.audio_complete.emit("")
-                        return
+    def _on_response_complete(self) -> None:
+        self._toolbar.set_audio_processing(False)
+        if self._config.overlay_timeout_ms > 0:
+            QTimer.singleShot(self._config.overlay_timeout_ms, self._overlay.hide)
 
-                    transcript = self._transcriber.transcribe(result.audio_path)
+    def _on_streaming_error(self, error: str) -> None:
+        self._is_recording = False
+        self._toolbar.set_recording_state(False)
+        self._toolbar.set_audio_processing(False)
+        self._overlay.show_error(error)
 
-                    try:
-                        os.unlink(result.audio_path)
-                    except:
-                        pass
-
-                    if not transcript.strip():
-                        self._signals.audio_complete.emit("")
-                        return
-
-                    analysis = self._analyzer.analyze(
-                        transcript,
-                        "Answer this interview question concisely and confidently.",
-                        PayloadType.TEXT
-                    )
-                    self._signals.audio_complete.emit(analysis.response)
-
-                except Exception:
-                    self._signals.audio_complete.emit("")
-
-            thread = threading.Thread(target=wait_for_result, daemon=True)
-            thread.start()
-
-    def _on_audio_complete(self, response: str):
+    def _on_audio_complete(self, response: str) -> None:
         self._toolbar.set_audio_processing(False)
         if response:
             if self._config.stealth_enabled:
@@ -435,24 +414,13 @@ class TrayApp:
             else:
                 self._typer.type_to_notepad(response)
 
-    def _quit(self):
+    def _quit(self) -> None:
         self._monitor.stop()
-        self._shutdown_audio_worker()
+        asyncio.run_coroutine_threadsafe(self._deepgram.stop_streaming(), self._loop)
         self._overlay.hide()
         self._toolbar.hide()
         self._tray.hide()
-        self._app.quit()
+        self._loop.stop()
 
-    def _shutdown_audio_worker(self):
-        if self._audio_process and self._audio_process.is_alive():
-            from app.audio_worker import AudioCommand, AudioMessage
-            try:
-                self._command_queue.put(AudioMessage(command=AudioCommand.SHUTDOWN))
-                self._audio_process.join(timeout=2)
-                if self._audio_process.is_alive():
-                    self._audio_process.terminate()
-            except Exception:
-                pass
-
-    def run(self):
-        sys.exit(self._app.exec())
+    def run(self) -> None:
+        pass
