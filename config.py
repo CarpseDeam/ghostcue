@@ -16,4 +16,5 @@ class Config:
     overlay_font_size: int = 11
     overlay_width: int = 600
     stealth_enabled: bool = True
-    silence_threshold_ms: int = 1500
+    silence_threshold_ms: int = 1000
+    question_silence_threshold_ms: int = 500

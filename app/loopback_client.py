@@ -57,11 +57,13 @@ class LoopbackStreamingClient(QObject):
         self._receiver_task: Optional[asyncio.Task[None]] = None
         self._last_final_time: float = 0.0
         self._silence_timer: Optional[QTimer] = None
-        self._silence_threshold_ms: int = 1500
+        self._silence_threshold_ms: int = 1000
+        self._question_silence_threshold_ms: int = 500
 
-    def set_silence_threshold(self, ms: int) -> None:
-        self._silence_threshold_ms = ms
-        print(f"[DEBUG] Silence threshold set to {ms}ms")
+    def set_silence_threshold(self, default_ms: int, question_ms: int = 500) -> None:
+        self._silence_threshold_ms = default_ms
+        self._question_silence_threshold_ms = question_ms
+        print(f"[DEBUG] Silence thresholds set: default={default_ms}ms, question={question_ms}ms")
 
     def _start_silence_monitor(self) -> None:
         if self._silence_timer is None:
@@ -79,11 +81,18 @@ class LoopbackStreamingClient(QObject):
     def _check_silence(self) -> None:
         if not self._is_capturing:
             return
-        if not self._accumulated_transcript.strip():
+
+        transcript = self._accumulated_transcript.strip()
+        if not transcript:
             return
+
+        is_question = transcript.endswith('?')
+        threshold = self._question_silence_threshold_ms if is_question else self._silence_threshold_ms
+
         elapsed_ms = (time.time() - self._last_final_time) * 1000
-        if elapsed_ms >= self._silence_threshold_ms:
-            print(f"[DEBUG] Silence detected! {elapsed_ms:.0f}ms since last speech, threshold={self._silence_threshold_ms}ms")
+        if elapsed_ms >= threshold:
+            q_indicator = " (question detected!)" if is_question else ""
+            print(f"[DEBUG] Silence detected! {elapsed_ms:.0f}ms >= {threshold}ms threshold{q_indicator}")
             self._stop_silence_monitor()
             self.silence_detected.emit()
 

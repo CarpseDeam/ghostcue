@@ -303,7 +303,10 @@ class TrayApp:
         self._deepgram = DeepgramStreamingClient()
         self._claude = ClaudeStreamingClient()
         self._loopback = LoopbackStreamingClient()
-        self._loopback.set_silence_threshold(self._config.silence_threshold_ms)
+        self._loopback.set_silence_threshold(
+            self._config.silence_threshold_ms,
+            self._config.question_silence_threshold_ms
+        )
         self._connect_streaming_signals()
         self._connect_loopback_signals()
 
