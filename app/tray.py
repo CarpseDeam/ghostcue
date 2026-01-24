@@ -5,7 +5,7 @@ import subprocess
 import threading
 from typing import Optional, Callable
 
-import keyboard
+from pynput import keyboard as pynput_keyboard
 
 from PyQt6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QWidget,
@@ -347,6 +347,7 @@ class TrayApp:
         self._is_responding = False
         self._pending_payload: Optional[ClipboardPayload] = None
         self._streaming_task: Optional[asyncio.Task] = None
+        self._hotkey_listener: Optional[pynput_keyboard.Listener] = None
 
         self._overlay = StealthOverlay(config)
 
@@ -389,6 +390,28 @@ class TrayApp:
         self._loopback.error_occurred.connect(self._on_streaming_error)
         self._loopback.silence_detected.connect(self._on_silence_detected)
 
+    def _disconnect_loopback_signals(self) -> None:
+        try:
+            self._loopback.interim_interviewer.disconnect(self._on_interim_update)
+        except TypeError:
+            pass
+        try:
+            self._loopback.final_interviewer.disconnect(self._on_interim_update)
+        except TypeError:
+            pass
+
+    def _reconnect_loopback_signals(self) -> None:
+        try:
+            self._loopback.interim_interviewer.disconnect(self._on_interim_update)
+        except TypeError:
+            pass
+        try:
+            self._loopback.final_interviewer.disconnect(self._on_interim_update)
+        except TypeError:
+            pass
+        self._loopback.interim_interviewer.connect(self._on_interim_update)
+        self._loopback.final_interviewer.connect(self._on_interim_update)
+
     def _create_icon(self) -> QIcon:
         pixmap = QPixmap(32, 32)
         pixmap.fill(QColor(0, 0, 0, 0))
@@ -429,20 +452,20 @@ class TrayApp:
         self._monitor.start()
 
     def _setup_hotkey(self) -> None:
+        def on_press(key: pynput_keyboard.Key | pynput_keyboard.KeyCode | None) -> None:
+            try:
+                if key == pynput_keyboard.Key.f9:
+                    print("[DEBUG] F9 hotkey pressed!")
+                    QTimer.singleShot(0, self._on_audio_button_click)
+            except Exception as e:
+                print(f"[DEBUG] Hotkey callback error: {e}")
+
         try:
-            keyboard.add_hotkey('f9', self._on_hotkey_press, suppress=False)
-            print("[DEBUG] F9 hotkey registered for record toggle")
+            self._hotkey_listener = pynput_keyboard.Listener(on_press=on_press)
+            self._hotkey_listener.start()
+            print("[DEBUG] F9 hotkey registered via pynput")
         except Exception as e:
             print(f"[DEBUG] Failed to register F9 hotkey: {e}")
-            print("[DEBUG] Try running as administrator")
-
-    def _on_hotkey_press(self) -> None:
-        print("[DEBUG] F9 hotkey pressed!")
-        try:
-            QTimer.singleShot(0, self._on_audio_button_click)
-            print("[DEBUG] QTimer.singleShot scheduled")
-        except Exception as e:
-            print(f"[DEBUG] Hotkey callback error: {e}")
 
     def _on_clipboard_change(self, payload: ClipboardPayload) -> None:
         self._signals.clipboard_changed.emit(payload)
@@ -540,9 +563,10 @@ Output ONLY the commit message, nothing else."""
         asyncio.run_coroutine_threadsafe(self._loopback.stop_streaming(), self._loop)
         transcript = self._loopback.get_transcript()
         if transcript.strip():
+            self._disconnect_loopback_signals()
             self._is_responding = True
             self._toolbar.set_audio_processing(True)
-            self._overlay.show_response("⏸️ Processing...")
+            self._overlay.show_response("Processing...")
             self._overlay.start_streaming_response()
             asyncio.run_coroutine_threadsafe(
                 self._claude.stream_response(transcript),
@@ -555,9 +579,10 @@ Output ONLY the commit message, nothing else."""
         print(f"[DEBUG] Audio button clicked, is_recording={self._is_recording}")
         if not self._is_recording:
             self._is_recording = True
+            self._reconnect_loopback_signals()
             self._toolbar.set_recording_state(True)
             self._overlay.clear_and_show()
-            self._overlay.show_response("🎤 Listening...")
+            self._overlay.show_response("Listening...")
             asyncio.run_coroutine_threadsafe(self._loopback.start_streaming(), self._loop)
         else:
             self._is_recording = False
@@ -566,6 +591,7 @@ Output ONLY the commit message, nothing else."""
 
             transcript = self._loopback.get_transcript()
             if transcript.strip():
+                self._disconnect_loopback_signals()
                 self._is_responding = True
                 self._toolbar.set_audio_processing(True)
                 self._overlay.start_streaming_response()
@@ -618,7 +644,8 @@ Output ONLY the commit message, nothing else."""
                 self._typer.type_to_notepad(response)
 
     def _quit(self) -> None:
-        keyboard.unhook_all()
+        if self._hotkey_listener is not None:
+            self._hotkey_listener.stop()
         self._monitor.stop()
         asyncio.run_coroutine_threadsafe(self._loopback.shutdown(), self._loop)
         asyncio.run_coroutine_threadsafe(self._deepgram.stop_streaming(), self._loop)
