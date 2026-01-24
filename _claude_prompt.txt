@@ -1,46 +1,98 @@
-## Task: Add Debug Logging to Trace Audio Flow Failure
+## Task: Add Exception Handling to Debug Silent Failures
 
 ### Problem
-When clicking record, `start_streaming()` produces no logs. Need to trace exactly where execution fails.
+`start_streaming()` prints its entry log but never reaches `_ensure_websocket_connected()` print. Something is failing silently.
 
-### File 1: app/tray.py
+### File: app/loopback_client.py
 
-**Location:** `_on_audio_button_click()` method (search for `def _on_audio_button_click`)
+### Change 1: Wrap the websocket check call in try/except
 
-**Add print at the VERY START of the method, right after the def line:**
-
-```python
-def _on_audio_button_click(self) -> None:
-    print(f"[DEBUG] Audio button clicked, is_recording={self._is_recording}")
-    if not self._is_recording:
-```
-
-### File 2: app/loopback_client.py
-
-**Location 1:** `start_streaming()` method (around line 353)
-
-**Add print at the VERY START of the method, right after the def line:**
+**Location:** `start_streaming()` method - find this code:
 
 ```python
 async def start_streaming(self) -> None:
     print(f"[DEBUG] start_streaming() called, is_warmed={self._is_warmed}")
     if not self._is_warmed:
+        print("[DEBUG] Not warmed, falling back to cold start")
+        await self._cold_start_streaming()
+        return
+
+    if not await self._ensure_websocket_connected():
 ```
 
-**Location 2:** `_ensure_websocket_connected()` method (around line 172)
-
-**Add print at the VERY START of the method, right after the def line:**
+**Replace with:**
 
 ```python
-async def _ensure_websocket_connected(self) -> bool:
-    ws_open = self._websocket.open if self._websocket is not None else None
-    print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
-    if self._websocket is not None and self._websocket.open:
+async def start_streaming(self) -> None:
+    print(f"[DEBUG] start_streaming() called, is_warmed={self._is_warmed}")
+    if not self._is_warmed:
+        print("[DEBUG] Not warmed, falling back to cold start")
+        await self._cold_start_streaming()
+        return
+
+    try:
+        print("[DEBUG] About to call _ensure_websocket_connected()")
+        connected = await self._ensure_websocket_connected()
+        print(f"[DEBUG] _ensure_websocket_connected() returned {connected}")
+        if not connected:
+            print("[DEBUG] Could not establish WebSocket, falling back to cold start")
+            self._is_warmed = False
+            await self._cold_start_streaming()
+            return
+    except Exception as e:
+        print(f"[DEBUG] Exception in _ensure_websocket_connected: {type(e).__name__}: {e}")
+        self._is_warmed = False
+        await self._cold_start_streaming()
+        return
+```
+
+### Change 2: Also need to remove the duplicate if-block that follows
+
+After the above change, find and DELETE this block (it will be duplicated otherwise):
+
+```python
+    if not await self._ensure_websocket_connected():
+        print("[DEBUG] Could not establish WebSocket, falling back to cold start")
+        self._is_warmed = False
+        await self._cold_start_streaming()
+        return
+```
+
+The code should flow directly from the try/except block to:
+```python
+    print("[DEBUG] Starting capture (pre-warmed, instant)")
+```
+
+### Change 3: Add safety to _ensure_websocket_connected task cancellation
+
+**Location:** `_ensure_websocket_connected()` method - find the task cancellation loop:
+
+```python
+    for task in [self._sender_task, self._receiver_task]:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+```
+
+**Replace with:**
+
+```python
+    for task in [self._sender_task, self._receiver_task]:
+        if task is not None:
+            if not task.done():
+                task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception) as e:
+                print(f"[DEBUG] Task cleanup: {type(e).__name__}")
 ```
 
 ### Requirements
-- Only add debug prints, don't change any logic
 - No emojis in code
-- Keep prints concise but informative
+- Keep all existing functionality
+- Just add debugging and exception safety
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

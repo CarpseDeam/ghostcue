@@ -187,11 +187,12 @@ class LoopbackStreamingClient(QObject):
 
         for task in [self._sender_task, self._receiver_task]:
             if task is not None:
-                task.cancel()
+                if not task.done():
+                    task.cancel()
                 try:
                     await task
-                except asyncio.CancelledError:
-                    pass
+                except (asyncio.CancelledError, Exception) as e:
+                    print(f"[DEBUG] Task cleanup: {type(e).__name__}")
 
         self._sender_task = None
         self._receiver_task = None
@@ -360,8 +361,17 @@ class LoopbackStreamingClient(QObject):
             await self._cold_start_streaming()
             return
 
-        if not await self._ensure_websocket_connected():
-            print("[DEBUG] Could not establish WebSocket, falling back to cold start")
+        try:
+            print("[DEBUG] About to call _ensure_websocket_connected()")
+            connected = await self._ensure_websocket_connected()
+            print(f"[DEBUG] _ensure_websocket_connected() returned {connected}")
+            if not connected:
+                print("[DEBUG] Could not establish WebSocket, falling back to cold start")
+                self._is_warmed = False
+                await self._cold_start_streaming()
+                return
+        except Exception as e:
+            print(f"[DEBUG] Exception in _ensure_websocket_connected: {type(e).__name__}: {e}")
             self._is_warmed = False
             await self._cold_start_streaming()
             return
