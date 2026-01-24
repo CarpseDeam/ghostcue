@@ -344,6 +344,7 @@ class TrayApp:
         self._analyzer = Analyzer()
         self._typer = HumanTyper()
         self._is_recording = False
+        self._is_responding = False
         self._pending_payload: Optional[ClipboardPayload] = None
         self._streaming_task: Optional[asyncio.Task] = None
 
@@ -525,6 +526,8 @@ Output ONLY the commit message, nothing else."""
             self._typer.type_to_notepad(response)
 
     def _on_interim_update(self, text: str) -> None:
+        if self._is_responding:
+            return
         if text.strip():
             self._overlay.show_response(f"🎤 {text}")
 
@@ -537,6 +540,7 @@ Output ONLY the commit message, nothing else."""
         asyncio.run_coroutine_threadsafe(self._loopback.stop_streaming(), self._loop)
         transcript = self._loopback.get_transcript()
         if transcript.strip():
+            self._is_responding = True
             self._toolbar.set_audio_processing(True)
             self._overlay.show_response("⏸️ Processing...")
             self._overlay.start_streaming_response()
@@ -562,6 +566,7 @@ Output ONLY the commit message, nothing else."""
 
             transcript = self._loopback.get_transcript()
             if transcript.strip():
+                self._is_responding = True
                 self._toolbar.set_audio_processing(True)
                 self._overlay.start_streaming_response()
                 asyncio.run_coroutine_threadsafe(
@@ -590,6 +595,7 @@ Output ONLY the commit message, nothing else."""
         )
 
     def _on_response_complete(self) -> None:
+        self._is_responding = False
         self._toolbar.set_audio_processing(False)
         self._toolbar.set_processing(False)
         if self._config.overlay_timeout_ms > 0:
@@ -597,6 +603,7 @@ Output ONLY the commit message, nothing else."""
 
     def _on_streaming_error(self, error: str) -> None:
         self._is_recording = False
+        self._is_responding = False
         self._toolbar.set_recording_state(False)
         self._toolbar.set_audio_processing(False)
         self._toolbar.set_processing(False)
