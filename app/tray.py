@@ -5,6 +5,8 @@ import subprocess
 import threading
 from typing import Optional, Callable
 
+import keyboard
+
 from PyQt6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QWidget,
     QVBoxLayout, QHBoxLayout, QPushButton
@@ -360,6 +362,7 @@ class TrayApp:
         self._setup_tray()
         self._setup_toolbar()
         self._setup_clipboard_monitor()
+        self._setup_hotkey()
 
         asyncio.run_coroutine_threadsafe(self._warm_up_loopback(), self._loop)
 
@@ -423,6 +426,13 @@ class TrayApp:
     def _setup_clipboard_monitor(self) -> None:
         self._monitor = ClipboardMonitor(self._on_clipboard_change)
         self._monitor.start()
+
+    def _setup_hotkey(self) -> None:
+        keyboard.add_hotkey('f9', self._on_hotkey_press, suppress=False)
+        print("[DEBUG] F9 hotkey registered for record toggle")
+
+    def _on_hotkey_press(self) -> None:
+        QTimer.singleShot(0, self._on_audio_button_click)
 
     def _on_clipboard_change(self, payload: ClipboardPayload) -> None:
         self._signals.clipboard_changed.emit(payload)
@@ -592,6 +602,7 @@ Output ONLY the commit message, nothing else."""
                 self._typer.type_to_notepad(response)
 
     def _quit(self) -> None:
+        keyboard.unhook_all()
         self._monitor.stop()
         asyncio.run_coroutine_threadsafe(self._loopback.shutdown(), self._loop)
         asyncio.run_coroutine_threadsafe(self._deepgram.stop_streaming(), self._loop)
