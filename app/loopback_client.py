@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import websockets
+from websockets.protocol import State as WebSocketState
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from app.loopback_worker import MessageType, WorkerConfig, run_capture_loop
@@ -173,9 +174,9 @@ class LoopbackStreamingClient(QObject):
         return f"wss://api.deepgram.com/v1/listen?{'&'.join(params)}"
 
     async def _ensure_websocket_connected(self) -> bool:
-        ws_open = (not self._websocket.closed) if self._websocket is not None else None
+        ws_open = (self._websocket.state == WebSocketState.OPEN) if self._websocket is not None else None
         print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
-        if self._websocket is not None and not self._websocket.closed:
+        if self._websocket is not None and self._websocket.state == WebSocketState.OPEN:
             return True
 
         print("[DEBUG] WebSocket stale or closed, reconnecting...")
@@ -204,8 +205,8 @@ class LoopbackStreamingClient(QObject):
 
         try:
             self._websocket = await websockets.connect(url, additional_headers=headers)
-            if self._websocket.closed:
-                print("[DEBUG] WebSocket connected but immediately closed")
+            if self._websocket.state != WebSocketState.OPEN:
+                print("[DEBUG] WebSocket connected but not in OPEN state")
                 return False
             print("[DEBUG] WebSocket reconnected to Deepgram")
             self._sender_task = asyncio.create_task(self._sender(self._websocket))
@@ -219,7 +220,7 @@ class LoopbackStreamingClient(QObject):
     async def _keepalive_loop(self) -> None:
         while self._running and self._is_warmed and not self._is_capturing:
             try:
-                if self._websocket is not None and not self._websocket.closed:
+                if self._websocket is not None and self._websocket.state == WebSocketState.OPEN:
                     await self._websocket.send(b'')
                     print("[DEBUG] Keepalive ping sent")
                 await asyncio.sleep(15)
