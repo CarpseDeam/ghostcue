@@ -31,6 +31,7 @@ class SignalBridge(QObject):
     analysis_complete = pyqtSignal(str)
     audio_complete = pyqtSignal(str)
     streaming_error = pyqtSignal(str)
+    hotkey_pressed = pyqtSignal()
 
 
 class FloatingToolbar(QWidget):
@@ -340,6 +341,7 @@ class TrayApp:
         self._signals.analysis_complete.connect(self._on_analysis_complete)
         self._signals.audio_complete.connect(self._on_audio_complete)
         self._signals.streaming_error.connect(self._on_streaming_error)
+        self._signals.hotkey_pressed.connect(self._on_audio_button_click)
 
         self._analyzer = Analyzer()
         self._typer = HumanTyper()
@@ -455,10 +457,13 @@ class TrayApp:
     def _setup_hotkey(self) -> None:
         def on_press(key: pynput_keyboard.Key | pynput_keyboard.KeyCode | None) -> None:
             try:
-                if key == pynput_keyboard.Key.f9 and not self._f9_pressed:
-                    self._f9_pressed = True
-                    print("[DEBUG] F9 hotkey pressed!")
-                    QTimer.singleShot(0, self._on_audio_button_click)
+                if key == pynput_keyboard.Key.f9:
+                    if not self._f9_pressed:
+                        self._f9_pressed = True
+                        print("[DEBUG] F9 hotkey pressed!")
+                        self._signals.hotkey_pressed.emit()
+                    else:
+                        print("[DEBUG] F9 ignored (key repeat)")
             except Exception as e:
                 print(f"[DEBUG] Hotkey callback error: {e}")
 
