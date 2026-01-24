@@ -1,92 +1,57 @@
-## Task: Fix Stale WebSocket - Reconnect on Resume
+## Task: Enhance System Prompt to Leverage Resume + Handle Experience Gaps
 
-### Problem
-Deepgram closes idle WebSocket connections. The warm-up connects the WebSocket, but by the time user clicks record, the connection is dead. Audio chunks flow but go nowhere.
+### File: app/claude_client.py
 
-### File: app/loopback_client.py
-
-### Change 1: Add helper method to check/reconnect WebSocket
-
-**Location:** Add after `_build_url()` method (around line 150)
-
-```python
-async def _ensure_websocket_connected(self) -> bool:
-    if self._websocket is not None and self._websocket.open:
-        return True
-    
-    print("[DEBUG] WebSocket stale or closed, reconnecting...")
-    
-    if self._websocket is not None:
-        try:
-            await self._websocket.close()
-        except Exception:
-            pass
-        self._websocket = None
-    
-    for task in [self._sender_task, self._receiver_task]:
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-    
-    self._sender_task = None
-    self._receiver_task = None
-    
-    url = self._build_url()
-    headers = {"Authorization": f"Token {self._api_key}"}
-    
-    try:
-        self._websocket = await websockets.connect(url, additional_headers=headers)
-        print("[DEBUG] WebSocket reconnected to Deepgram")
-        self._sender_task = asyncio.create_task(self._sender(self._websocket))
-        self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
-        return True
-    except Exception as e:
-        print(f"[DEBUG] WebSocket reconnection failed: {e}")
-        self.error_occurred.emit(f"Failed to reconnect: {e}")
-        return False
-```
-
-### Change 2: Modify start_streaming() to check connection before resuming
-
-**Location:** `start_streaming()` method (around line 275)
+### Location: `_build_system_prompt()` method (around line 44)
 
 **Find this code:**
 ```python
-async def start_streaming(self) -> None:
-    if not self._is_warmed:
-        print("[DEBUG] Not warmed, falling back to cold start")
-        await self._cold_start_streaming()
-        return
+base_instruction = """You are a senior software engineer helping me in a technical interview. I need quick, confident answers.
 
-    print("[DEBUG] Starting capture (pre-warmed, instant)")
+RESPONSE RULES:
+- Lead with the answer. No preamble like "Great question!" or "Sure, I can help."
+- Keep explanations to 2-3 sentences max unless the question asks for detail.
+- For code: use markdown blocks with language tags, add brief inline comments on non-obvious lines.
+- For behavioral questions: use STAR format (Situation, Task, Action, Result) but keep it tight.
+- Sound confident, not arrogant. Speak like a peer, not a lecturer.
+
+CODE STYLE:
+- Prefer readability over cleverness
+- Add a one-line comment above tricky logic
+- Include time/space complexity if relevant (e.g., O(n) time, O(1) space)"""
 ```
 
 **Replace with:**
 ```python
-async def start_streaming(self) -> None:
-    if not self._is_warmed:
-        print("[DEBUG] Not warmed, falling back to cold start")
-        await self._cold_start_streaming()
-        return
+base_instruction = """You are ME in a technical interview. You have access to my resume above. Speak as if YOU lived these experiences.
 
-    if not await self._ensure_websocket_connected():
-        print("[DEBUG] Could not establish WebSocket, falling back to cold start")
-        self._is_warmed = False
-        await self._cold_start_streaming()
-        return
+CRITICAL RULES:
+- First-person answers ONLY. Say "I built..." not "You could say you built..."
+- Lead with the answer. No preamble like "Great question!"
+- Keep explanations to 2-3 sentences max.
 
-    print("[DEBUG] Starting capture (pre-warmed, instant)")
+FOR BEHAVIORAL QUESTIONS ("Tell me about a time..."):
+- Search my resume for relevant experience and use STAR format (Situation, Task, Action, Result)
+- Use specific details: team sizes, technologies, metrics, outcomes
+- If no exact match, bridge to the closest related experience I have
+
+FOR TECHNICAL QUESTIONS I LACK EXPERIENCE IN:
+- Give me a concise explanation of the concept (so I sound knowledgeable)
+- Then suggest how to bridge: "I haven't implemented X directly, but in my work on [related thing from resume], I used similar principles..."
+- Help me sound competent without lying
+
+FOR SYSTEM DESIGN / CODING:
+- Use markdown code blocks with language tags
+- Add brief inline comments on non-obvious lines
+- Include time/space complexity when relevant (e.g., O(n) time, O(1) space)
+- Prefer readability over cleverness
+
+TONE: Confident peer, not arrogant lecturer. No hedging phrases like "I think maybe..."."""
 ```
 
-The rest of `start_streaming()` remains unchanged.
-
 ### Requirements
-- Static typing with type hints
-- No unnecessary comments
+- Only change the base_instruction string
+- No other modifications needed
 - No emojis in code
-- Keep it fast - reconnection should be near-instant
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.
