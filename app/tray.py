@@ -428,11 +428,20 @@ class TrayApp:
         self._monitor.start()
 
     def _setup_hotkey(self) -> None:
-        keyboard.add_hotkey('f9', self._on_hotkey_press, suppress=False)
-        print("[DEBUG] F9 hotkey registered for record toggle")
+        try:
+            keyboard.add_hotkey('f9', self._on_hotkey_press, suppress=False)
+            print("[DEBUG] F9 hotkey registered for record toggle")
+        except Exception as e:
+            print(f"[DEBUG] Failed to register F9 hotkey: {e}")
+            print("[DEBUG] Try running as administrator")
 
     def _on_hotkey_press(self) -> None:
-        QTimer.singleShot(0, self._on_audio_button_click)
+        print("[DEBUG] F9 hotkey pressed!")
+        try:
+            QTimer.singleShot(0, self._on_audio_button_click)
+            print("[DEBUG] QTimer.singleShot scheduled")
+        except Exception as e:
+            print(f"[DEBUG] Hotkey callback error: {e}")
 
     def _on_clipboard_change(self, payload: ClipboardPayload) -> None:
         self._signals.clipboard_changed.emit(payload)
