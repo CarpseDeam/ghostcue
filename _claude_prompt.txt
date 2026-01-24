@@ -1,98 +1,60 @@
-## Task: Add Exception Handling to Debug Silent Failures
+## Task: Fix WebSocket API - Replace .open with correct property
 
 ### Problem
-`start_streaming()` prints its entry log but never reaches `_ensure_websocket_connected()` print. Something is failing silently.
+The `websockets` library no longer has `.open` attribute. Error:
+```
+AttributeError: 'ClientConnection' object has no attribute 'open'
+```
 
 ### File: app/loopback_client.py
 
-### Change 1: Wrap the websocket check call in try/except
+### Change 1: Fix the check in `_ensure_websocket_connected()`
 
-**Location:** `start_streaming()` method - find this code:
-
+**Find this code (around line 173-175):**
 ```python
-async def start_streaming(self) -> None:
-    print(f"[DEBUG] start_streaming() called, is_warmed={self._is_warmed}")
-    if not self._is_warmed:
-        print("[DEBUG] Not warmed, falling back to cold start")
-        await self._cold_start_streaming()
-        return
-
-    if not await self._ensure_websocket_connected():
+async def _ensure_websocket_connected(self) -> bool:
+    ws_open = self._websocket.open if self._websocket is not None else None
+    print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
+    if self._websocket is not None and self._websocket.open:
+        return True
 ```
 
 **Replace with:**
-
 ```python
-async def start_streaming(self) -> None:
-    print(f"[DEBUG] start_streaming() called, is_warmed={self._is_warmed}")
-    if not self._is_warmed:
-        print("[DEBUG] Not warmed, falling back to cold start")
-        await self._cold_start_streaming()
-        return
-
-    try:
-        print("[DEBUG] About to call _ensure_websocket_connected()")
-        connected = await self._ensure_websocket_connected()
-        print(f"[DEBUG] _ensure_websocket_connected() returned {connected}")
-        if not connected:
-            print("[DEBUG] Could not establish WebSocket, falling back to cold start")
-            self._is_warmed = False
-            await self._cold_start_streaming()
-            return
-    except Exception as e:
-        print(f"[DEBUG] Exception in _ensure_websocket_connected: {type(e).__name__}: {e}")
-        self._is_warmed = False
-        await self._cold_start_streaming()
-        return
+async def _ensure_websocket_connected(self) -> bool:
+    ws_open = (not self._websocket.closed) if self._websocket is not None else None
+    print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
+    if self._websocket is not None and not self._websocket.closed:
+        return True
 ```
 
-### Change 2: Also need to remove the duplicate if-block that follows
+### Change 2: Also add robustness - check state before using websocket
 
-After the above change, find and DELETE this block (it will be duplicated otherwise):
-
+**In the same method, after the reconnection succeeds, verify it's actually open. Find:**
 ```python
-    if not await self._ensure_websocket_connected():
-        print("[DEBUG] Could not establish WebSocket, falling back to cold start")
-        self._is_warmed = False
-        await self._cold_start_streaming()
-        return
-```
-
-The code should flow directly from the try/except block to:
-```python
-    print("[DEBUG] Starting capture (pre-warmed, instant)")
-```
-
-### Change 3: Add safety to _ensure_websocket_connected task cancellation
-
-**Location:** `_ensure_websocket_connected()` method - find the task cancellation loop:
-
-```python
-    for task in [self._sender_task, self._receiver_task]:
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        try:
+            self._websocket = await websockets.connect(url, additional_headers=headers)
+            print("[DEBUG] WebSocket reconnected to Deepgram")
+            self._sender_task = asyncio.create_task(self._sender(self._websocket))
+            self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
+            return True
 ```
 
 **Replace with:**
-
 ```python
-    for task in [self._sender_task, self._receiver_task]:
-        if task is not None:
-            if not task.done():
-                task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception) as e:
-                print(f"[DEBUG] Task cleanup: {type(e).__name__}")
+        try:
+            self._websocket = await websockets.connect(url, additional_headers=headers)
+            if self._websocket.closed:
+                print("[DEBUG] WebSocket connected but immediately closed")
+                return False
+            print("[DEBUG] WebSocket reconnected to Deepgram")
+            self._sender_task = asyncio.create_task(self._sender(self._websocket))
+            self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
+            return True
 ```
 
 ### Requirements
 - No emojis in code
-- Keep all existing functionality
-- Just add debugging and exception safety
+- Use `not self._websocket.closed` instead of `self._websocket.open`
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

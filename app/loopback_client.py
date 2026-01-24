@@ -171,9 +171,9 @@ class LoopbackStreamingClient(QObject):
         return f"wss://api.deepgram.com/v1/listen?{'&'.join(params)}"
 
     async def _ensure_websocket_connected(self) -> bool:
-        ws_open = self._websocket.open if self._websocket is not None else None
+        ws_open = (not self._websocket.closed) if self._websocket is not None else None
         print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
-        if self._websocket is not None and self._websocket.open:
+        if self._websocket is not None and not self._websocket.closed:
             return True
 
         print("[DEBUG] WebSocket stale or closed, reconnecting...")
@@ -202,6 +202,9 @@ class LoopbackStreamingClient(QObject):
 
         try:
             self._websocket = await websockets.connect(url, additional_headers=headers)
+            if self._websocket.closed:
+                print("[DEBUG] WebSocket connected but immediately closed")
+                return False
             print("[DEBUG] WebSocket reconnected to Deepgram")
             self._sender_task = asyncio.create_task(self._sender(self._websocket))
             self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
