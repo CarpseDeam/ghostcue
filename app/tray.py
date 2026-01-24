@@ -37,6 +37,7 @@ class FloatingToolbar(QWidget):
         on_audio_click: Optional[Callable[[], None]] = None,
         on_solve_click: Optional[Callable[[], None]] = None,
         on_explain_click: Optional[Callable[[], None]] = None,
+        on_git_click: Optional[Callable[[], None]] = None,
         config: Config = None
     ) -> None:
         super().__init__()
@@ -44,9 +45,11 @@ class FloatingToolbar(QWidget):
         self._on_audio_callback = on_audio_click
         self._on_solve_callback = on_solve_click
         self._on_explain_callback = on_explain_click
+        self._on_git_callback = on_git_click
         self._config = config or Config()
         self._is_recording = False
         self._clipboard_ready = False
+        self._image_ready = False
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -117,6 +120,14 @@ class FloatingToolbar(QWidget):
         self._update_explain_style()
         layout.addWidget(self._explain_btn)
 
+        self._git_btn = QPushButton("G")
+        self._git_btn.setFixedSize(btn_size, btn_size)
+        self._git_btn.setEnabled(False)
+        self._git_btn.setToolTip("Generate commit message from screenshot")
+        self._git_btn.clicked.connect(self._on_git_click)
+        self._update_git_style()
+        layout.addWidget(self._git_btn)
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self._container)
@@ -135,6 +146,10 @@ class FloatingToolbar(QWidget):
     def _on_explain_click(self) -> None:
         if self._on_explain_callback and self._clipboard_ready:
             self._on_explain_callback()
+
+    def _on_git_click(self) -> None:
+        if self._on_git_callback and self._image_ready:
+            self._on_git_callback()
 
     def _update_solve_style(self) -> None:
         if self._solve_btn.isEnabled():
@@ -190,12 +205,44 @@ class FloatingToolbar(QWidget):
                 }
             """)
 
+    def _update_git_style(self) -> None:
+        if self._git_btn.isEnabled():
+            self._git_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #f39c12;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #f5b041;
+                }
+            """)
+        else:
+            self._git_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #555555;
+                    color: #888888;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    font-weight: bold;
+                }
+            """)
+
     def set_clipboard_ready(self, ready: bool) -> None:
         self._clipboard_ready = ready
         self._solve_btn.setEnabled(ready)
         self._explain_btn.setEnabled(ready)
         self._update_solve_style()
         self._update_explain_style()
+
+    def set_image_ready(self, ready: bool) -> None:
+        self._image_ready = ready
+        self._git_btn.setEnabled(ready)
+        self._update_git_style()
 
     def set_processing(self, processing: bool) -> None:
         self._solve_btn.setEnabled(not processing and self._clipboard_ready)
@@ -368,6 +415,7 @@ class TrayApp:
             on_audio_click=self._on_audio_button_click,
             on_solve_click=self._on_solve_click,
             on_explain_click=self._on_explain_click,
+            on_git_click=self._on_git_click,
             config=self._config
         )
         self._toolbar.show_in_corner()
@@ -382,21 +430,60 @@ class TrayApp:
     def _on_clipboard_signal(self, payload: ClipboardPayload) -> None:
         self._pending_payload = payload
         self._toolbar.set_clipboard_ready(True)
+        self._toolbar.set_image_ready(payload.payload_type == PayloadType.IMAGE)
         self._toolbar.set_processing(False)
 
     def _on_solve_click(self) -> None:
         if not self._pending_payload:
             return
         self._toolbar.set_processing(True)
-        instruction = "DO NOT edit any files. DO NOT use any tools. Just analyze this problem and respond with ONLY the solution code. Output the code directly in your response, nothing else."
+        instruction = """DO NOT edit any files. DO NOT use any tools. Analyze this problem and respond with ONLY the solution code.
+
+CODE RULES:
+- Use markdown code blocks with language tags
+- Add brief inline comments on non-obvious lines only
+- Include time/space complexity as a comment at the end (e.g., # O(n) time, O(1) space)
+- Prefer readability over cleverness
+
+Output the code directly, no preamble or explanation."""
         self._process_clipboard_request(instruction)
 
     def _on_explain_click(self) -> None:
         if not self._pending_payload:
             return
         self._toolbar.set_processing(True)
-        instruction = "DO NOT edit any files. DO NOT use any tools. Explain this problem clearly and teach me the concept. Output your explanation directly in your response."
+        instruction = """DO NOT edit any files. DO NOT use any tools. Explain this problem clearly.
+
+RESPONSE RULES:
+- Lead with the answer, no preamble like "Great question!"
+- Keep explanations to 2-3 sentences per concept
+- For behavioral questions: use STAR format (Situation, Task, Action, Result) but keep it tight
+- For code concepts: include a minimal example in markdown code blocks
+- Sound confident, not arrogant
+
+Output your explanation directly."""
         self._process_clipboard_request(instruction)
+
+    def _on_git_click(self) -> None:
+        if not self._pending_payload or self._pending_payload.payload_type != PayloadType.IMAGE:
+            return
+        self._toolbar.set_processing(True)
+        self._overlay.clear_and_show()
+        self._overlay.start_streaming_response()
+        prompt = """Analyze this screenshot of code changes/diff. Generate a conventional commit message.
+
+Format: <type>(<scope>): <description>
+
+Types: feat, fix, refactor, docs, test, chore, style, perf
+- Keep under 72 chars
+- Imperative mood ("add" not "added")
+- No period at end
+
+Output ONLY the commit message, nothing else."""
+        asyncio.run_coroutine_threadsafe(
+            self._claude.stream_vision_response(prompt, self._pending_payload.content),
+            self._loop
+        )
 
     def _process_clipboard_request(self, instruction: str) -> None:
         payload = self._pending_payload
@@ -484,6 +571,7 @@ class TrayApp:
 
     def _on_response_complete(self) -> None:
         self._toolbar.set_audio_processing(False)
+        self._toolbar.set_processing(False)
         if self._config.overlay_timeout_ms > 0:
             QTimer.singleShot(self._config.overlay_timeout_ms, self._overlay.hide)
 
@@ -491,6 +579,7 @@ class TrayApp:
         self._is_recording = False
         self._toolbar.set_recording_state(False)
         self._toolbar.set_audio_processing(False)
+        self._toolbar.set_processing(False)
         self._overlay.show_error(error)
 
     def _on_audio_complete(self, response: str) -> None:

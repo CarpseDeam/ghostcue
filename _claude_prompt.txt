@@ -1,0 +1,89 @@
+## Task: Fix Copy Button Debug + Unify S/A Button Prompts
+
+### Context
+The copy button in the overlay may not be firing, and the S/A buttons use different prompts than the audio flow (which has rich formatting instructions). We need to:
+1. Add debug logging to copy functionality
+2. Inject formatting rules into S/A button instructions
+
+### File 1: app/overlay.py
+
+**Location:** `_copy_to_clipboard()` method (around line 211-215)
+
+**Current code:**
+```python
+def _copy_to_clipboard(self) -> None:
+    text = self._response_text or self._text_edit.toPlainText()
+    if text:
+        clipboard = QApplication.clipboard()
+        clipboard.setText(text, clipboard.Mode.Clipboard)
+```
+
+**Replace with:**
+```python
+def _copy_to_clipboard(self) -> None:
+    text = self._response_text or self._text_edit.toPlainText()
+    print(f"[DEBUG] Copy clicked, text length: {len(text) if text else 0}")
+    if text:
+        clipboard = QApplication.clipboard()
+        clipboard.setText(text, QApplication.clipboard().Mode.Clipboard)
+        print("[DEBUG] Clipboard write complete")
+    else:
+        print("[DEBUG] No text to copy")
+```
+
+---
+
+### File 2: app/tray.py
+
+**Location 1:** `_on_solve_click()` method (around line 377)
+
+**Current instruction:**
+```python
+instruction = "DO NOT edit any files. DO NOT use any tools. Just analyze this problem and respond with ONLY the solution code. Output the code directly in your response, nothing else."
+```
+
+**Replace with:**
+```python
+instruction = """DO NOT edit any files. DO NOT use any tools. Analyze this problem and respond with ONLY the solution code.
+
+CODE RULES:
+- Use markdown code blocks with language tags
+- Add brief inline comments on non-obvious lines only
+- Include time/space complexity as a comment at the end (e.g., # O(n) time, O(1) space)
+- Prefer readability over cleverness
+
+Output the code directly, no preamble or explanation."""
+```
+
+---
+
+**Location 2:** `_on_explain_click()` method (around line 384)
+
+**Current instruction:**
+```python
+instruction = "DO NOT edit any files. DO NOT use any tools. Explain this problem clearly and teach me the concept. Output your explanation directly in your response."
+```
+
+**Replace with:**
+```python
+instruction = """DO NOT edit any files. DO NOT use any tools. Explain this problem clearly.
+
+RESPONSE RULES:
+- Lead with the answer, no preamble like "Great question!"
+- Keep explanations to 2-3 sentences per concept
+- For behavioral questions: use STAR format (Situation, Task, Action, Result) but keep it tight
+- For code concepts: include a minimal example in markdown code blocks
+- Sound confident, not arrogant
+
+Output your explanation directly."""
+```
+
+---
+
+### Requirements
+- Maintain static typing (type hints already present, don't remove)
+- No unnecessary comments in code
+- Don't change method signatures
+- Don't add emojis to code
+
+Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

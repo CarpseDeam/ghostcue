@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -81,3 +82,41 @@ CODE STYLE:
 
         except Exception as e:
             self.error_occurred.emit(f"Claude error: {e}")
+
+    async def stream_vision_response(self, prompt: str, image_path: str) -> None:
+        if not self._ensure_client():
+            return
+
+        try:
+            with open(image_path, "rb") as f:
+                image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+
+            with self._client.messages.stream(
+                model=self._config.model,
+                max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": image_data,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt,
+                        },
+                    ],
+                }],
+            ) as stream:
+                for text in stream.text_stream:
+                    self.text_chunk.emit(text)
+
+            self.response_complete.emit()
+
+        except Exception as e:
+            self.error_occurred.emit(f"Claude vision error: {e}")

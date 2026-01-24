@@ -211,9 +211,13 @@ class StealthOverlay(QWidget):
 
     def _copy_to_clipboard(self) -> None:
         text = self._response_text or self._text_edit.toPlainText()
+        print(f"[DEBUG] Copy clicked, text length: {len(text) if text else 0}")
         if text:
             clipboard = QApplication.clipboard()
-            clipboard.setText(text, clipboard.Mode.Clipboard)
+            clipboard.setText(text, QApplication.clipboard().Mode.Clipboard)
+            print("[DEBUG] Clipboard write complete")
+        else:
+            print("[DEBUG] No text to copy")
 
     def _append_text(self, text: str) -> None:
         self._response_text += text
