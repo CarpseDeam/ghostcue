@@ -1,60 +1,100 @@
-## Task: Fix WebSocket API - Replace .open with correct property
+## Task: Add WebSocket Keepalive Pings to Prevent Idle Timeout
 
 ### Problem
-The `websockets` library no longer has `.open` attribute. Error:
-```
-AttributeError: 'ClientConnection' object has no attribute 'open'
-```
+Deepgram closes idle WebSocket connections after ~30s. We need to keep it alive with periodic pings.
 
 ### File: app/loopback_client.py
 
-### Change 1: Fix the check in `_ensure_websocket_connected()`
+### Change 1: Add keepalive task field to `__init__`
 
-**Find this code (around line 173-175):**
+**Location:** Around line 45, with other task fields like `self._sender_task`, add:
+
 ```python
-async def _ensure_websocket_connected(self) -> bool:
-    ws_open = self._websocket.open if self._websocket is not None else None
-    print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
-    if self._websocket is not None and self._websocket.open:
-        return True
+self._keepalive_task: Optional[asyncio.Task[None]] = None
+```
+
+### Change 2: Add keepalive coroutine
+
+**Location:** Add after `_ensure_websocket_connected()` method (around line 210):
+
+```python
+async def _keepalive_loop(self) -> None:
+    while self._running and self._is_warmed and not self._is_capturing:
+        try:
+            if self._websocket is not None and not self._websocket.closed:
+                await self._websocket.send(b'')
+                print("[DEBUG] Keepalive ping sent")
+            await asyncio.sleep(15)
+        except Exception as e:
+            print(f"[DEBUG] Keepalive error: {e}")
+            break
+```
+
+### Change 3: Start keepalive after warm-up succeeds
+
+**Location:** In `warm_up()` method, find:
+
+```python
+self._is_warmed = True
+print("[DEBUG] Loopback client warmed up and ready!")
 ```
 
 **Replace with:**
+
 ```python
-async def _ensure_websocket_connected(self) -> bool:
-    ws_open = (not self._websocket.closed) if self._websocket is not None else None
-    print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
-    if self._websocket is not None and not self._websocket.closed:
-        return True
+self._is_warmed = True
+self._keepalive_task = asyncio.create_task(self._keepalive_loop())
+print("[DEBUG] Loopback client warmed up and ready!")
 ```
 
-### Change 2: Also add robustness - check state before using websocket
+### Change 4: Stop keepalive when capture starts
 
-**In the same method, after the reconnection succeeds, verify it's actually open. Find:**
+**Location:** In `start_streaming()`, find the line `print("[DEBUG] Starting capture (pre-warmed, instant)")` and add BEFORE it:
+
 ```python
-        try:
-            self._websocket = await websockets.connect(url, additional_headers=headers)
-            print("[DEBUG] WebSocket reconnected to Deepgram")
-            self._sender_task = asyncio.create_task(self._sender(self._websocket))
-            self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
-            return True
+if self._keepalive_task is not None:
+    self._keepalive_task.cancel()
+    self._keepalive_task = None
+```
+
+### Change 5: Restart keepalive when capture stops
+
+**Location:** In `stop_streaming()`, find:
+
+```python
+self._is_capturing = False
+
+if self._input_queue is not None:
+```
+
+**Add between those lines:**
+
+```python
+self._is_capturing = False
+
+if self._is_warmed and self._keepalive_task is None:
+    self._keepalive_task = asyncio.create_task(self._keepalive_loop())
+
+if self._input_queue is not None:
+```
+
+### Change 6: Clean up keepalive on shutdown
+
+**Location:** In `shutdown()`, find the for loop with tasks:
+
+```python
+for task in [self._queue_reader_task, self._sender_task, self._receiver_task]:
 ```
 
 **Replace with:**
+
 ```python
-        try:
-            self._websocket = await websockets.connect(url, additional_headers=headers)
-            if self._websocket.closed:
-                print("[DEBUG] WebSocket connected but immediately closed")
-                return False
-            print("[DEBUG] WebSocket reconnected to Deepgram")
-            self._sender_task = asyncio.create_task(self._sender(self._websocket))
-            self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
-            return True
+for task in [self._queue_reader_task, self._sender_task, self._receiver_task, self._keepalive_task]:
 ```
 
 ### Requirements
+- Static typing with Optional[asyncio.Task[None]]
 - No emojis in code
-- Use `not self._websocket.closed` instead of `self._websocket.open`
+- Ping every 15 seconds
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

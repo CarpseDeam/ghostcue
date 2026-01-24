@@ -55,6 +55,7 @@ class LoopbackStreamingClient(QObject):
         self._is_capturing = False
         self._sender_task: Optional[asyncio.Task[None]] = None
         self._receiver_task: Optional[asyncio.Task[None]] = None
+        self._keepalive_task: Optional[asyncio.Task[None]] = None
         self._last_final_time: float = 0.0
         self._silence_timer: Optional[QTimer] = None
         self._silence_threshold_ms: int = 1000
@@ -145,6 +146,7 @@ class LoopbackStreamingClient(QObject):
         self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
 
         self._is_warmed = True
+        self._keepalive_task = asyncio.create_task(self._keepalive_loop())
         print("[DEBUG] Loopback client warmed up and ready!")
         return True
 
@@ -213,6 +215,17 @@ class LoopbackStreamingClient(QObject):
             print(f"[DEBUG] WebSocket reconnection failed: {e}")
             self.error_occurred.emit(f"Failed to reconnect: {e}")
             return False
+
+    async def _keepalive_loop(self) -> None:
+        while self._running and self._is_warmed and not self._is_capturing:
+            try:
+                if self._websocket is not None and not self._websocket.closed:
+                    await self._websocket.send(b'')
+                    print("[DEBUG] Keepalive ping sent")
+                await asyncio.sleep(15)
+            except Exception as e:
+                print(f"[DEBUG] Keepalive error: {e}")
+                break
 
     def _blocking_queue_get(
         self,
@@ -379,6 +392,9 @@ class LoopbackStreamingClient(QObject):
             await self._cold_start_streaming()
             return
 
+        if self._keepalive_task is not None:
+            self._keepalive_task.cancel()
+            self._keepalive_task = None
         print("[DEBUG] Starting capture (pre-warmed, instant)")
         self._accumulated_transcript = ""
         self._is_capturing = True
@@ -478,6 +494,9 @@ class LoopbackStreamingClient(QObject):
         print("[DEBUG] Pausing capture")
         self._is_capturing = False
 
+        if self._is_warmed and self._keepalive_task is None:
+            self._keepalive_task = asyncio.create_task(self._keepalive_loop())
+
         if self._input_queue is not None:
             self._input_queue.put("pause")
             print("[DEBUG] Pause signal sent to subprocess")
@@ -489,7 +508,7 @@ class LoopbackStreamingClient(QObject):
         self._is_warmed = False
         self._is_capturing = False
 
-        for task in [self._queue_reader_task, self._sender_task, self._receiver_task]:
+        for task in [self._queue_reader_task, self._sender_task, self._receiver_task, self._keepalive_task]:
             if task is not None:
                 task.cancel()
                 try:
@@ -500,6 +519,7 @@ class LoopbackStreamingClient(QObject):
         self._queue_reader_task = None
         self._sender_task = None
         self._receiver_task = None
+        self._keepalive_task = None
 
         if self._input_queue is not None:
             try:
