@@ -170,6 +170,44 @@ class LoopbackStreamingClient(QObject):
         ]
         return f"wss://api.deepgram.com/v1/listen?{'&'.join(params)}"
 
+    async def _ensure_websocket_connected(self) -> bool:
+        if self._websocket is not None and self._websocket.open:
+            return True
+
+        print("[DEBUG] WebSocket stale or closed, reconnecting...")
+
+        if self._websocket is not None:
+            try:
+                await self._websocket.close()
+            except Exception:
+                pass
+            self._websocket = None
+
+        for task in [self._sender_task, self._receiver_task]:
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        self._sender_task = None
+        self._receiver_task = None
+
+        url = self._build_url()
+        headers = {"Authorization": f"Token {self._api_key}"}
+
+        try:
+            self._websocket = await websockets.connect(url, additional_headers=headers)
+            print("[DEBUG] WebSocket reconnected to Deepgram")
+            self._sender_task = asyncio.create_task(self._sender(self._websocket))
+            self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
+            return True
+        except Exception as e:
+            print(f"[DEBUG] WebSocket reconnection failed: {e}")
+            self.error_occurred.emit(f"Failed to reconnect: {e}")
+            return False
+
     def _blocking_queue_get(
         self,
         queue: multiprocessing.Queue[MessageType],
@@ -316,6 +354,12 @@ class LoopbackStreamingClient(QObject):
     async def start_streaming(self) -> None:
         if not self._is_warmed:
             print("[DEBUG] Not warmed, falling back to cold start")
+            await self._cold_start_streaming()
+            return
+
+        if not await self._ensure_websocket_connected():
+            print("[DEBUG] Could not establish WebSocket, falling back to cold start")
+            self._is_warmed = False
             await self._cold_start_streaming()
             return
 

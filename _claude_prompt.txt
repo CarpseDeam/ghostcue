@@ -1,89 +1,92 @@
-## Task: Fix Copy Button Debug + Unify S/A Button Prompts
+## Task: Fix Stale WebSocket - Reconnect on Resume
 
-### Context
-The copy button in the overlay may not be firing, and the S/A buttons use different prompts than the audio flow (which has rich formatting instructions). We need to:
-1. Add debug logging to copy functionality
-2. Inject formatting rules into S/A button instructions
+### Problem
+Deepgram closes idle WebSocket connections. The warm-up connects the WebSocket, but by the time user clicks record, the connection is dead. Audio chunks flow but go nowhere.
 
-### File 1: app/overlay.py
+### File: app/loopback_client.py
 
-**Location:** `_copy_to_clipboard()` method (around line 211-215)
+### Change 1: Add helper method to check/reconnect WebSocket
 
-**Current code:**
+**Location:** Add after `_build_url()` method (around line 150)
+
 ```python
-def _copy_to_clipboard(self) -> None:
-    text = self._response_text or self._text_edit.toPlainText()
-    if text:
-        clipboard = QApplication.clipboard()
-        clipboard.setText(text, clipboard.Mode.Clipboard)
+async def _ensure_websocket_connected(self) -> bool:
+    if self._websocket is not None and self._websocket.open:
+        return True
+    
+    print("[DEBUG] WebSocket stale or closed, reconnecting...")
+    
+    if self._websocket is not None:
+        try:
+            await self._websocket.close()
+        except Exception:
+            pass
+        self._websocket = None
+    
+    for task in [self._sender_task, self._receiver_task]:
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+    
+    self._sender_task = None
+    self._receiver_task = None
+    
+    url = self._build_url()
+    headers = {"Authorization": f"Token {self._api_key}"}
+    
+    try:
+        self._websocket = await websockets.connect(url, additional_headers=headers)
+        print("[DEBUG] WebSocket reconnected to Deepgram")
+        self._sender_task = asyncio.create_task(self._sender(self._websocket))
+        self._receiver_task = asyncio.create_task(self._receiver(self._websocket))
+        return True
+    except Exception as e:
+        print(f"[DEBUG] WebSocket reconnection failed: {e}")
+        self.error_occurred.emit(f"Failed to reconnect: {e}")
+        return False
+```
+
+### Change 2: Modify start_streaming() to check connection before resuming
+
+**Location:** `start_streaming()` method (around line 275)
+
+**Find this code:**
+```python
+async def start_streaming(self) -> None:
+    if not self._is_warmed:
+        print("[DEBUG] Not warmed, falling back to cold start")
+        await self._cold_start_streaming()
+        return
+
+    print("[DEBUG] Starting capture (pre-warmed, instant)")
 ```
 
 **Replace with:**
 ```python
-def _copy_to_clipboard(self) -> None:
-    text = self._response_text or self._text_edit.toPlainText()
-    print(f"[DEBUG] Copy clicked, text length: {len(text) if text else 0}")
-    if text:
-        clipboard = QApplication.clipboard()
-        clipboard.setText(text, QApplication.clipboard().Mode.Clipboard)
-        print("[DEBUG] Clipboard write complete")
-    else:
-        print("[DEBUG] No text to copy")
+async def start_streaming(self) -> None:
+    if not self._is_warmed:
+        print("[DEBUG] Not warmed, falling back to cold start")
+        await self._cold_start_streaming()
+        return
+
+    if not await self._ensure_websocket_connected():
+        print("[DEBUG] Could not establish WebSocket, falling back to cold start")
+        self._is_warmed = False
+        await self._cold_start_streaming()
+        return
+
+    print("[DEBUG] Starting capture (pre-warmed, instant)")
 ```
 
----
-
-### File 2: app/tray.py
-
-**Location 1:** `_on_solve_click()` method (around line 377)
-
-**Current instruction:**
-```python
-instruction = "DO NOT edit any files. DO NOT use any tools. Just analyze this problem and respond with ONLY the solution code. Output the code directly in your response, nothing else."
-```
-
-**Replace with:**
-```python
-instruction = """DO NOT edit any files. DO NOT use any tools. Analyze this problem and respond with ONLY the solution code.
-
-CODE RULES:
-- Use markdown code blocks with language tags
-- Add brief inline comments on non-obvious lines only
-- Include time/space complexity as a comment at the end (e.g., # O(n) time, O(1) space)
-- Prefer readability over cleverness
-
-Output the code directly, no preamble or explanation."""
-```
-
----
-
-**Location 2:** `_on_explain_click()` method (around line 384)
-
-**Current instruction:**
-```python
-instruction = "DO NOT edit any files. DO NOT use any tools. Explain this problem clearly and teach me the concept. Output your explanation directly in your response."
-```
-
-**Replace with:**
-```python
-instruction = """DO NOT edit any files. DO NOT use any tools. Explain this problem clearly.
-
-RESPONSE RULES:
-- Lead with the answer, no preamble like "Great question!"
-- Keep explanations to 2-3 sentences per concept
-- For behavioral questions: use STAR format (Situation, Task, Action, Result) but keep it tight
-- For code concepts: include a minimal example in markdown code blocks
-- Sound confident, not arrogant
-
-Output your explanation directly."""
-```
-
----
+The rest of `start_streaming()` remains unchanged.
 
 ### Requirements
-- Maintain static typing (type hints already present, don't remove)
-- No unnecessary comments in code
-- Don't change method signatures
-- Don't add emojis to code
+- Static typing with type hints
+- No unnecessary comments
+- No emojis in code
+- Keep it fast - reconnection should be near-instant
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.
