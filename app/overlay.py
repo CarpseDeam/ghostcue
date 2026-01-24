@@ -46,8 +46,10 @@ class StealthOverlay(QWidget):
             code_content = escape_html(match.group(2).rstrip())
             parts.append(
                 f'<pre style="font-family: Consolas, \'Courier New\', monospace; '
-                f'background-color: rgba(0, 0, 0, 0.3); padding: 8px; '
-                f'border-radius: 4px; white-space: pre; color: #a8d08d;">'
+                f'background-color: rgba(0, 0, 0, 0.4); padding: 10px; margin: 8px 0; '
+                f'border-radius: 6px; white-space: pre-wrap; word-wrap: break-word; '
+                f'color: #a8d08d; font-size: {self._config.overlay_font_size - 1}pt; '
+                f'line-height: 1.4;">'
                 f'<code>{code_content}</code></pre>'
             )
             last_end = match.end()
@@ -155,6 +157,11 @@ class StealthOverlay(QWidget):
 
         self._text_edit = QTextEdit()
         self._text_edit.setReadOnly(True)
+        self._text_edit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self._text_edit.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         self._text_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._text_edit.setStyleSheet(f"""
@@ -203,7 +210,10 @@ class StealthOverlay(QWidget):
         self._interim_label.show()
 
     def _copy_to_clipboard(self) -> None:
-        QApplication.clipboard().setText(self._response_text)
+        text = self._response_text or self._text_edit.toPlainText()
+        if text:
+            clipboard = QApplication.clipboard()
+            clipboard.setText(text, clipboard.Mode.Clipboard)
 
     def _append_text(self, text: str) -> None:
         self._response_text += text
@@ -258,6 +268,12 @@ class StealthOverlay(QWidget):
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            click_pos = event.position().toPoint()
+            text_edit_rect = self._text_edit.geometry()
+            container_pos = self._container.mapFromParent(click_pos)
+            if text_edit_rect.contains(container_pos):
+                self._text_edit.setFocus()
+                return
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 

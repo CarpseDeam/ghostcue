@@ -11,7 +11,8 @@ from PyQt6.QtCore import QObject, pyqtSignal
 @dataclass(frozen=True)
 class ClaudeConfig:
     model: str = "claude-sonnet-4-5-20250929"
-    max_tokens: int = 1024
+    max_tokens: int = 768
+    temperature: float = 0.7
 
 
 class ClaudeStreamingClient(QObject):
@@ -36,7 +37,19 @@ class ClaudeStreamingClient(QObject):
             return ""
 
     def _build_system_prompt(self) -> str:
-        base_instruction = "You are answering an interview question. Be concise and confident."
+        base_instruction = """You are a senior software engineer helping me in a technical interview. I need quick, confident answers.
+
+RESPONSE RULES:
+- Lead with the answer. No preamble like "Great question!" or "Sure, I can help."
+- Keep explanations to 2-3 sentences max unless the question asks for detail.
+- For code: use markdown blocks with language tags, add brief inline comments on non-obvious lines.
+- For behavioral questions: use STAR format (Situation, Task, Action, Result) but keep it tight.
+- Sound confident, not arrogant. Speak like a peer, not a lecturer.
+
+CODE STYLE:
+- Prefer readability over cleverness
+- Add a one-line comment above tricky logic
+- Include time/space complexity if relevant (e.g., O(n) time, O(1) space)"""
         if self._context:
             return f"{self._context}\n\n---\n\n{base_instruction}"
         return base_instruction
@@ -57,6 +70,7 @@ class ClaudeStreamingClient(QObject):
             with self._client.messages.stream(
                 model=self._config.model,
                 max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
                 system=self._build_system_prompt(),
                 messages=[{"role": "user", "content": question}],
             ) as stream:
