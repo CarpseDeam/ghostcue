@@ -345,6 +345,7 @@ class TrayApp:
         self._typer = HumanTyper()
         self._is_recording = False
         self._is_responding = False
+        self._f9_pressed: bool = False
         self._pending_payload: Optional[ClipboardPayload] = None
         self._streaming_task: Optional[asyncio.Task] = None
         self._hotkey_listener: Optional[pynput_keyboard.Listener] = None
@@ -454,14 +455,22 @@ class TrayApp:
     def _setup_hotkey(self) -> None:
         def on_press(key: pynput_keyboard.Key | pynput_keyboard.KeyCode | None) -> None:
             try:
-                if key == pynput_keyboard.Key.f9:
+                if key == pynput_keyboard.Key.f9 and not self._f9_pressed:
+                    self._f9_pressed = True
                     print("[DEBUG] F9 hotkey pressed!")
                     QTimer.singleShot(0, self._on_audio_button_click)
             except Exception as e:
                 print(f"[DEBUG] Hotkey callback error: {e}")
 
+        def on_release(key: pynput_keyboard.Key | pynput_keyboard.KeyCode | None) -> None:
+            try:
+                if key == pynput_keyboard.Key.f9:
+                    self._f9_pressed = False
+            except Exception:
+                pass
+
         try:
-            self._hotkey_listener = pynput_keyboard.Listener(on_press=on_press)
+            self._hotkey_listener = pynput_keyboard.Listener(on_press=on_press, on_release=on_release)
             self._hotkey_listener.start()
             print("[DEBUG] F9 hotkey registered via pynput")
         except Exception as e:
@@ -583,6 +592,7 @@ Output ONLY the commit message, nothing else."""
             self._toolbar.set_recording_state(True)
             self._overlay.clear_and_show()
             self._overlay.show_response("Listening...")
+            print("[DEBUG] Recording started, showing overlay")
             asyncio.run_coroutine_threadsafe(self._loopback.start_streaming(), self._loop)
         else:
             self._is_recording = False
@@ -590,6 +600,7 @@ Output ONLY the commit message, nothing else."""
             asyncio.run_coroutine_threadsafe(self._loopback.stop_streaming(), self._loop)
 
             transcript = self._loopback.get_transcript()
+            print(f"[DEBUG] Recording stopped, transcript length: {len(transcript)}")
             if transcript.strip():
                 self._disconnect_loopback_signals()
                 self._is_responding = True
