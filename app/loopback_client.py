@@ -171,6 +171,8 @@ class LoopbackStreamingClient(QObject):
         return f"wss://api.deepgram.com/v1/listen?{'&'.join(params)}"
 
     async def _ensure_websocket_connected(self) -> bool:
+        ws_open = self._websocket.open if self._websocket is not None else None
+        print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
         if self._websocket is not None and self._websocket.open:
             return True
 
@@ -352,6 +354,7 @@ class LoopbackStreamingClient(QObject):
         return False
 
     async def start_streaming(self) -> None:
+        print(f"[DEBUG] start_streaming() called, is_warmed={self._is_warmed}")
         if not self._is_warmed:
             print("[DEBUG] Not warmed, falling back to cold start")
             await self._cold_start_streaming()

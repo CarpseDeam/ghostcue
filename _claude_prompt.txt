@@ -1,0 +1,46 @@
+## Task: Add Debug Logging to Trace Audio Flow Failure
+
+### Problem
+When clicking record, `start_streaming()` produces no logs. Need to trace exactly where execution fails.
+
+### File 1: app/tray.py
+
+**Location:** `_on_audio_button_click()` method (search for `def _on_audio_button_click`)
+
+**Add print at the VERY START of the method, right after the def line:**
+
+```python
+def _on_audio_button_click(self) -> None:
+    print(f"[DEBUG] Audio button clicked, is_recording={self._is_recording}")
+    if not self._is_recording:
+```
+
+### File 2: app/loopback_client.py
+
+**Location 1:** `start_streaming()` method (around line 353)
+
+**Add print at the VERY START of the method, right after the def line:**
+
+```python
+async def start_streaming(self) -> None:
+    print(f"[DEBUG] start_streaming() called, is_warmed={self._is_warmed}")
+    if not self._is_warmed:
+```
+
+**Location 2:** `_ensure_websocket_connected()` method (around line 172)
+
+**Add print at the VERY START of the method, right after the def line:**
+
+```python
+async def _ensure_websocket_connected(self) -> bool:
+    ws_open = self._websocket.open if self._websocket is not None else None
+    print(f"[DEBUG] _ensure_websocket_connected() called, websocket={self._websocket is not None}, open={ws_open}")
+    if self._websocket is not None and self._websocket.open:
+```
+
+### Requirements
+- Only add debug prints, don't change any logic
+- No emojis in code
+- Keep prints concise but informative
+
+Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

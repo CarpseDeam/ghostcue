@@ -529,6 +529,7 @@ Output ONLY the commit message, nothing else."""
             self._overlay.show_response("No speech detected")
 
     def _on_audio_button_click(self) -> None:
+        print(f"[DEBUG] Audio button clicked, is_recording={self._is_recording}")
         if not self._is_recording:
             self._is_recording = True
             self._toolbar.set_recording_state(True)
