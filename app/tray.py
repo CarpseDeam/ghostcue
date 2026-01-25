@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import subprocess
 import threading
 from typing import Optional, Callable
@@ -13,7 +14,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QPushButton
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup
 
 from config import Config
 from contracts import ClipboardPayload, PayloadType
@@ -26,6 +27,8 @@ from app.deepgram_client import DeepgramStreamingClient
 from app.claude_client import ClaudeStreamingClient
 from app.loopback_client import LoopbackStreamingClient
 from app.session_manager import SessionManager
+from app.providers import ClaudeProvider, GeminiProvider
+from app.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +338,12 @@ class FloatingToolbar(QWidget):
 
 
 class TrayApp:
+    PROVIDER_CLAUDE = "claude"
+    PROVIDER_GEMINI_PRO = "gemini_pro"
+    PROVIDER_GEMINI_FLASH = "gemini_flash"
+
+    CONTEXT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "context.txt")
+
     def __init__(self, config: Config, loop: asyncio.AbstractEventLoop) -> None:
         self._config = config
         self._loop = loop
@@ -357,6 +366,7 @@ class TrayApp:
         self._streaming_task: Optional[asyncio.Task] = None
         self._hotkey_listener: Optional[pynput_keyboard.Listener] = None
         self._pending_transcript: str = ""
+        self._system_prompt = self._build_system_prompt()
 
         self._overlay = StealthOverlay(config)
 
@@ -367,8 +377,16 @@ class TrayApp:
             self._config.silence_threshold_ms,
             self._config.question_silence_threshold_ms
         )
+
+        self._claude_provider = ClaudeProvider()
+        self._gemini_pro_provider = GeminiProvider(model=GeminiProvider.MODEL_PRO)
+        self._gemini_flash_provider = GeminiProvider(model=GeminiProvider.MODEL_FLASH)
+        self._active_provider: BaseProvider = self._claude_provider
+        self._active_provider_name = self.PROVIDER_CLAUDE
+
         self._connect_streaming_signals()
         self._connect_loopback_signals()
+        self._connect_provider_signals()
 
         self._setup_tray()
         self._setup_toolbar()
@@ -421,6 +439,56 @@ class TrayApp:
         self._loopback.interim_interviewer.connect(self._on_interim_update)
         self._loopback.final_interviewer.connect(self._on_interim_update)
 
+    def _connect_provider_signals(self) -> None:
+        """Connect all provider signals to overlay handlers."""
+        for provider in (
+            self._claude_provider,
+            self._gemini_pro_provider,
+            self._gemini_flash_provider,
+        ):
+            provider.text_chunk.connect(self._overlay.text_chunk_received.emit)
+            provider.response_complete.connect(self._on_response_complete)
+            provider.error_occurred.connect(self._on_streaming_error)
+
+    def _load_context(self) -> str:
+        """Load context from context.txt file."""
+        try:
+            with open(self.CONTEXT_PATH, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            return ""
+
+    def _build_system_prompt(self) -> str:
+        """Build the system prompt with context and base instructions."""
+        context = self._load_context()
+        base_instruction = """You are ME in a technical interview. You have access to my resume above. Speak as if YOU lived these experiences.
+
+CRITICAL: THIS IS A VERBAL INTERVIEW - I will be SPEAKING your response out loud.
+- NO CODE BLOCKS. Never. I cannot recite code verbally.
+- Explain concepts conversationally, like you're talking to the interviewer
+- For system design: describe components, data flow, trade-offs in plain English
+- A one-liner pseudocode reference is okay ("I'd use a dictionary mapping user IDs to timestamps")
+- Keep responses under 30 seconds of speaking time (~75-100 words)
+
+RESPONSE RULES:
+- First-person ONLY. Say "I built..." not "You could say..."
+- Lead with the answer. No preamble like "Great question!"
+- Be concise. Interviewers can ask follow-ups.
+
+FOR BEHAVIORAL QUESTIONS:
+- Use STAR format (Situation, Task, Action, Result) but keep it tight
+- Pull specific details from my resume: team sizes, technologies, metrics
+- If no exact match, bridge to closest related experience
+
+FOR TECHNICAL QUESTIONS I LACK EXPERIENCE IN:
+- Give a concise explanation showing I understand the concept
+- Bridge: "I haven't implemented X directly, but in my work on [related thing], I used similar principles..."
+
+TONE: Confident peer. No hedging like "I think maybe..." - speak with authority."""
+        if context:
+            return f"{context}\n\n---\n\n{base_instruction}"
+        return base_instruction
+
     def _create_icon(self) -> QIcon:
         pixmap = QPixmap(32, 32)
         pixmap.fill(QColor(0, 0, 0, 0))
@@ -450,6 +518,28 @@ class TrayApp:
         self._clear_session_action.triggered.connect(self._on_clear_session)
         self._clear_session_action.setEnabled(False)
         menu.addAction(self._clear_session_action)
+
+        menu.addSeparator()
+
+        provider_menu = menu.addMenu("AI Provider")
+        self._provider_action_group = QActionGroup(provider_menu)
+        self._provider_action_group.setExclusive(True)
+
+        self._claude_action = QAction("Claude", checkable=True)
+        self._claude_action.setChecked(True)
+        self._claude_action.triggered.connect(lambda: self._on_provider_change(self.PROVIDER_CLAUDE))
+        self._provider_action_group.addAction(self._claude_action)
+        provider_menu.addAction(self._claude_action)
+
+        self._gemini_pro_action = QAction("Gemini Pro", checkable=True)
+        self._gemini_pro_action.triggered.connect(lambda: self._on_provider_change(self.PROVIDER_GEMINI_PRO))
+        self._provider_action_group.addAction(self._gemini_pro_action)
+        provider_menu.addAction(self._gemini_pro_action)
+
+        self._gemini_flash_action = QAction("Gemini Flash", checkable=True)
+        self._gemini_flash_action.triggered.connect(lambda: self._on_provider_change(self.PROVIDER_GEMINI_FLASH))
+        self._provider_action_group.addAction(self._gemini_flash_action)
+        provider_menu.addAction(self._gemini_flash_action)
 
         menu.addSeparator()
 
@@ -672,7 +762,7 @@ Output ONLY the commit message, nothing else."""
             return
         self._overlay.start_streaming_response()
         asyncio.run_coroutine_threadsafe(
-            self._claude.stream_response(question),
+            self._active_provider.stream_response(question, None, self._system_prompt),
             self._loop
         )
 
@@ -681,8 +771,10 @@ Output ONLY the commit message, nothing else."""
         transcript: str,
         messages: list[dict[str, str]] | None,
     ) -> None:
-        """Stream Claude response and track in session if persistent mode enabled."""
-        response = await self._claude.stream_response(transcript, messages)
+        """Stream response from active provider and track in session if persistent mode enabled."""
+        response = await self._active_provider.stream_response(
+            transcript, messages, self._system_prompt
+        )
         if self._session_manager.persistent_mode and response:
             self._session_manager.add_user_message(transcript)
             self._session_manager.add_assistant_message(response)
@@ -711,6 +803,21 @@ Output ONLY the commit message, nothing else."""
                 self._overlay.show_response(response)
             else:
                 self._typer.type_to_notepad(response)
+
+    def _on_provider_change(self, provider_name: str) -> None:
+        """Handle provider selection change from menu."""
+        if provider_name == self._active_provider_name:
+            return
+
+        if provider_name == self.PROVIDER_CLAUDE:
+            self._active_provider = self._claude_provider
+        elif provider_name == self.PROVIDER_GEMINI_PRO:
+            self._active_provider = self._gemini_pro_provider
+        elif provider_name == self.PROVIDER_GEMINI_FLASH:
+            self._active_provider = self._gemini_flash_provider
+
+        self._active_provider_name = provider_name
+        logger.info("AI provider changed to: %s", provider_name)
 
     def _on_toggle_persistent_mode(self, checked: bool) -> None:
         self._session_manager.persistent_mode = checked

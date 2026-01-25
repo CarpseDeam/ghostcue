@@ -1,3 +1,9 @@
+"""Legacy Claude streaming client.
+
+DEPRECATED: Use app.providers.ClaudeProvider instead for new code.
+This module is kept for backwards compatibility with vision features.
+"""
+
 from __future__ import annotations
 
 import base64
