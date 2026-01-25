@@ -74,25 +74,45 @@ TONE: Confident peer. No hedging like "I think maybe..." - speak with authority.
             self._client = Anthropic(api_key=self._api_key)
         return True
 
-    async def stream_response(self, question: str) -> None:
+    async def stream_response(
+        self,
+        question: str,
+        messages: list[dict[str, str]] | None = None,
+    ) -> str:
+        """Stream a response from Claude.
+
+        Args:
+            question: The user's question/prompt.
+            messages: Optional conversation history for multi-turn sessions.
+
+        Returns:
+            The complete response text for session tracking.
+        """
         if not self._ensure_client():
-            return
+            return ""
 
         try:
+            conversation = messages.copy() if messages else []
+            conversation.append({"role": "user", "content": question})
+
+            full_response = ""
             with self._client.messages.stream(
                 model=self._config.model,
                 max_tokens=self._config.max_tokens,
                 temperature=self._config.temperature,
                 system=self._build_system_prompt(),
-                messages=[{"role": "user", "content": question}],
+                messages=conversation,
             ) as stream:
                 for text in stream.text_stream:
+                    full_response += text
                     self.text_chunk.emit(text)
 
             self.response_complete.emit()
+            return full_response
 
         except Exception as e:
             self.error_occurred.emit(f"Claude error: {e}")
+            return ""
 
     async def stream_vision_response(self, prompt: str, image_path: str) -> None:
         if not self._ensure_client():

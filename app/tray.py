@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import subprocess
 import threading
 from typing import Optional, Callable
@@ -12,7 +13,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QPushButton
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject, QPoint
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction
 
 from config import Config
 from contracts import ClipboardPayload, PayloadType
@@ -24,6 +25,9 @@ from app.overlay import StealthOverlay
 from app.deepgram_client import DeepgramStreamingClient
 from app.claude_client import ClaudeStreamingClient
 from app.loopback_client import LoopbackStreamingClient
+from app.session_manager import SessionManager
+
+logger = logging.getLogger(__name__)
 
 
 class SignalBridge(QObject):
@@ -345,12 +349,14 @@ class TrayApp:
 
         self._analyzer = Analyzer()
         self._typer = HumanTyper()
+        self._session_manager = SessionManager()
         self._is_recording = False
         self._is_responding = False
         self._f9_pressed: bool = False
         self._pending_payload: Optional[ClipboardPayload] = None
         self._streaming_task: Optional[asyncio.Task] = None
         self._hotkey_listener: Optional[pynput_keyboard.Listener] = None
+        self._pending_transcript: str = ""
 
         self._overlay = StealthOverlay(config)
 
@@ -434,6 +440,19 @@ class TrayApp:
         self._tray.setToolTip("Clipboard Helper")
 
         menu = QMenu()
+
+        self._persistent_action = QAction("Persistent Session", checkable=True)
+        self._persistent_action.setChecked(self._session_manager.persistent_mode)
+        self._persistent_action.triggered.connect(self._on_toggle_persistent_mode)
+        menu.addAction(self._persistent_action)
+
+        self._clear_session_action = QAction("Clear Session")
+        self._clear_session_action.triggered.connect(self._on_clear_session)
+        self._clear_session_action.setEnabled(False)
+        menu.addAction(self._clear_session_action)
+
+        menu.addSeparator()
+
         quit_action = menu.addAction("Quit")
         quit_action.triggered.connect(self._quit)
 
@@ -579,11 +598,17 @@ Output ONLY the commit message, nothing else."""
         if transcript.strip():
             self._disconnect_loopback_signals()
             self._is_responding = True
+            self._pending_transcript = transcript
             self._toolbar.set_audio_processing(True)
             self._overlay.show_response("Processing...")
             self._overlay.start_streaming_response()
+            messages = (
+                self._session_manager.get_messages()
+                if self._session_manager.persistent_mode
+                else None
+            )
             asyncio.run_coroutine_threadsafe(
-                self._claude.stream_response(transcript),
+                self._stream_and_track_response(transcript, messages),
                 self._loop
             )
         else:
@@ -609,10 +634,16 @@ Output ONLY the commit message, nothing else."""
             if transcript.strip():
                 self._disconnect_loopback_signals()
                 self._is_responding = True
+                self._pending_transcript = transcript
                 self._toolbar.set_audio_processing(True)
                 self._overlay.start_streaming_response()
+                messages = (
+                    self._session_manager.get_messages()
+                    if self._session_manager.persistent_mode
+                    else None
+                )
                 asyncio.run_coroutine_threadsafe(
-                    self._claude.stream_response(transcript),
+                    self._stream_and_track_response(transcript, messages),
                     self._loop
                 )
             else:
@@ -624,8 +655,17 @@ Output ONLY the commit message, nothing else."""
             self._overlay.show_error("No speech detected")
             return
 
+        self._pending_transcript = transcript
         self._overlay.start_streaming_response()
-        asyncio.run_coroutine_threadsafe(self._claude.stream_response(transcript), self._loop)
+        messages = (
+            self._session_manager.get_messages()
+            if self._session_manager.persistent_mode
+            else None
+        )
+        asyncio.run_coroutine_threadsafe(
+            self._stream_and_track_response(transcript, messages),
+            self._loop
+        )
 
     def _on_interviewer_question(self, question: str) -> None:
         if not question.strip():
@@ -636,8 +676,21 @@ Output ONLY the commit message, nothing else."""
             self._loop
         )
 
+    async def _stream_and_track_response(
+        self,
+        transcript: str,
+        messages: list[dict[str, str]] | None,
+    ) -> None:
+        """Stream Claude response and track in session if persistent mode enabled."""
+        response = await self._claude.stream_response(transcript, messages)
+        if self._session_manager.persistent_mode and response:
+            self._session_manager.add_user_message(transcript)
+            self._session_manager.add_assistant_message(response)
+            self._update_clear_session_action()
+
     def _on_response_complete(self) -> None:
         self._is_responding = False
+        self._pending_transcript = ""
         self._toolbar.set_audio_processing(False)
         self._toolbar.set_processing(False)
         if self._config.overlay_timeout_ms > 0:
@@ -658,6 +711,23 @@ Output ONLY the commit message, nothing else."""
                 self._overlay.show_response(response)
             else:
                 self._typer.type_to_notepad(response)
+
+    def _on_toggle_persistent_mode(self, checked: bool) -> None:
+        self._session_manager.persistent_mode = checked
+        self._update_clear_session_action()
+        logger.debug("Persistent mode toggled via menu: %s", checked)
+
+    def _on_clear_session(self) -> None:
+        self._session_manager.clear()
+        self._update_clear_session_action()
+        logger.debug("Session cleared via menu")
+
+    def _update_clear_session_action(self) -> None:
+        enabled = (
+            self._session_manager.persistent_mode
+            and not self._session_manager.is_empty()
+        )
+        self._clear_session_action.setEnabled(enabled)
 
     def _quit(self) -> None:
         if self._hotkey_listener is not None:

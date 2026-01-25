@@ -11,6 +11,18 @@ from PyQt6.QtGui import QFont
 from config import Config
 from app.stealth import make_stealth
 
+# Dark theme constants (VS Code/PyCharm style)
+THEME_BACKGROUND = "#1e1e1e"
+THEME_TEXT = "#d4d4d4"
+THEME_TEXT_MUTED = "#888888"
+THEME_BORDER = "#3c3c3c"
+THEME_SELECTION = "#264f78"
+THEME_CODE_TEXT = "#a8d08d"
+THEME_CODE_BACKGROUND = "rgba(0, 0, 0, 0.4)"
+THEME_ERROR = "#ff6b6b"
+FONT_FAMILY = "'JetBrains Mono', 'Consolas', 'Courier New', monospace"
+FONT_SIZE_PT = 11
+
 
 class StealthOverlay(QWidget):
     interim_transcript = pyqtSignal(str)
@@ -45,10 +57,10 @@ class StealthOverlay(QWidget):
 
             code_content = escape_html(match.group(2).rstrip())
             parts.append(
-                f'<pre style="font-family: Consolas, \'Courier New\', monospace; '
-                f'background-color: rgba(0, 0, 0, 0.4); padding: 10px; margin: 8px 0; '
+                f'<pre style="font-family: {FONT_FAMILY}; '
+                f'background-color: {THEME_CODE_BACKGROUND}; padding: 10px; margin: 8px 0; '
                 f'border-radius: 6px; white-space: pre-wrap; word-wrap: break-word; '
-                f'color: #a8d08d; font-size: {self._config.overlay_font_size - 1}pt; '
+                f'color: {THEME_CODE_TEXT}; font-size: {FONT_SIZE_PT - 1}pt; '
                 f'line-height: 1.4;">'
                 f'<code>{code_content}</code></pre>'
             )
@@ -75,9 +87,9 @@ class StealthOverlay(QWidget):
 
             escaped = escape_html(para)
             processed = inline_code_pattern.sub(
-                r'<code style="font-family: Consolas, \'Courier New\', monospace; '
-                r'background-color: rgba(0, 0, 0, 0.2); padding: 2px 4px; '
-                r'border-radius: 3px; color: #a8d08d;">\1</code>',
+                f'<code style="font-family: {FONT_FAMILY}; '
+                f'background-color: rgba(0, 0, 0, 0.2); padding: 2px 4px; '
+                f'border-radius: 3px; color: {THEME_CODE_TEXT};">\\1</code>',
                 escaped
             )
             lines = processed.replace("\n", "<br>")
@@ -141,16 +153,17 @@ class StealthOverlay(QWidget):
 
         self._interim_label = QLabel()
         self._interim_label.setWordWrap(True)
-        self._interim_label.setStyleSheet("""
-            QLabel {
-                color: #888888;
+        self._interim_label.setStyleSheet(f"""
+            QLabel {{
+                color: {THEME_TEXT_MUTED};
                 background-color: transparent;
                 font-style: italic;
                 padding: 4px;
-            }
+            }}
         """)
         font = QFont()
-        font.setPointSize(self._config.overlay_font_size - 1)
+        font.setFamilies(["JetBrains Mono", "Consolas", "Courier New"])
+        font.setPointSize(FONT_SIZE_PT - 1)
         self._interim_label.setFont(font)
         self._interim_label.hide()
         container_layout.addWidget(self._interim_label)
@@ -166,15 +179,16 @@ class StealthOverlay(QWidget):
         self._text_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._text_edit.setStyleSheet(f"""
             QTextEdit {{
-                background-color: transparent;
-                border: none;
-                color: #e8e8e8;
-                selection-background-color: rgba(100, 100, 255, 0.3);
-                font-size: {self._config.overlay_font_size}pt;
-                line-height: 1.5;
+                background-color: {THEME_BACKGROUND};
+                color: {THEME_TEXT};
+                font-family: {FONT_FAMILY};
+                font-size: {FONT_SIZE_PT}pt;
+                border: 1px solid {THEME_BORDER};
+                padding: 8px;
+                selection-background-color: {THEME_SELECTION};
             }}
             QScrollBar:vertical {{
-                background-color: rgba(60, 60, 60, 100);
+                background-color: {THEME_BORDER};
                 width: 6px;
                 border-radius: 3px;
             }}
@@ -188,7 +202,8 @@ class StealthOverlay(QWidget):
             }}
         """)
         font = QFont()
-        font.setPointSize(self._config.overlay_font_size)
+        font.setFamilies(["JetBrains Mono", "Consolas", "Courier New"])
+        font.setPointSize(FONT_SIZE_PT)
         self._text_edit.setFont(font)
 
         container_layout.addWidget(self._text_edit)
@@ -254,7 +269,7 @@ class StealthOverlay(QWidget):
     def show_error(self, error: str) -> None:
         self._interim_label.hide()
         self._response_text = f"[Error: {error}]"
-        self._text_edit.setHtml(f'<p style="color: #ff6b6b;">{self._response_text}</p>')
+        self._text_edit.setHtml(f'<p style="color: {THEME_ERROR};">{self._response_text}</p>')
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
