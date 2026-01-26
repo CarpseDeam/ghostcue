@@ -1,4 +1,4 @@
-# Phase 1: Test Generation
+# Spec-Driven Implementation
 
 ## CRITICAL: TRUST THE SPEC
 
@@ -6,76 +6,84 @@ The specification below is COMPLETE. Do not:
 - Read README, ARCHITECTURE, or documentation files
 - Search for patterns or conventions in the codebase
 - Explore directory structures
-- Read files unrelated to test generation
+- Read files unrelated to your implementation
 
 Only read files that:
 1. You need to import from (check the target path's neighbors)
 2. Contain types/classes referenced in the interface
 
-The spec tells you exactly what to test. Trust it.
+The spec tells you exactly what to build. Trust it.
 
 ## CIRCUIT BREAKER
 
 If you have made 8+ file reads without writing any code, STOP.
 You are exploring instead of implementing. The spec is complete.
-Write the tests now with what you know.
-
-## CRITICAL CONSTRAINT: DO NOT WRITE IMPLEMENTATION CODE
-
-You are FORBIDDEN from writing implementation code in this phase.
-Your ONLY task is to generate the test file.
-Do not create the implementation file.
-Do not write any production code.
-Only write tests.
+Write the implementation now with what you know.
 
 ## THE SPECIFICATION
 
-# Specification: InterviewRecoveryFeatures
-Tier: FEATURE
+# Specification: OverlayCheatSheet
+Tier: HOTFIX
 
 ## Description
-Add three recovery features for live interview reliability.
-
-## Interface
-- `StealthOverlay.show_transcript(text: str) -> None` — Display heard text above response
-- `TrayApp._on_retry_hotkey() -> None` — Re-send last transcript
-- `TrayApp._on_cancel_response() -> None` — Cancel current streaming
+Add a subtle hotkey cheat sheet footer to the overlay.
 
 ## Must Do
-- Store last transcript for retry functionality
-- Show transcript label above response in overlay
-- Track streaming task for cancellation
-- Wire up F10 and Escape hotkeys via pynput
-- Keep transcript visible during response streaming
-- Show "Cancelled - press F10 to retry" message on cancel
+- Add `_cheatsheet_label` as a QLabel with hotkey hints
+- Style it muted (THEME_TEXT_MUTED) and smaller font (FONT_SIZE_PT - 2)
+- Center align the text
+- Add to container_layout after text_edit
 
 ## Must Not Do
-- Change provider implementations
-- Modify SessionManager
-- Change the audio capture flow
-- Add new dependencies
-
-## Edge Cases
-- F10 with no previous transcript → ignore silently
-- F10 while already responding → ignore silently
-- Escape when not responding → ignore silently
-- Cancel then retry → should work (signals reconnected)
+- Make it interactive/clickable
+- Add toggle/hide functionality
+- Change any existing overlay behavior
+- Modify the copy button functionality
 
 ## Validation
 - Tests: pytest tests/ -v
 
+## Target Path
+- `app/overlay.py`
+
 ## YOUR TASK
 
-Create a pytest test suite at: `tests/test_interviewrecoveryfeatures.py`
+**Tier: HOTFIX** - Minimal scope, fast iteration.
+- Focus on the specific bug/issue only
+- 1-3 targeted tests maximum
 
-Test Generation Rules:
-1. Create one test per 'Must Do' requirement
-2. Create one test per edge case
-3. Create tests for precondition violations
-4. Create tests for postcondition verification
-5. Create tests verifying 'Must Not Do' constraints
+### Step 1: Implement the Interface
 
-Write tests that will FAIL until implementation exists.
-Do NOT write any implementation code.
+Implementation location: `- `app/overlay.py``
+
+Implementation Rules:
+1. Follow interface signatures EXACTLY as specified
+2. Handle all edge cases as specified
+3. Ensure preconditions are checked
+4. Ensure postconditions are satisfied
+5. Respect all 'Must Not Do' constraints
+
+### Step 2: Write Tests
+
+Test file location: `tests/test_overlaycheatsheet.py`
+
+After implementing, write tests that verify contract and behavior:
+
+**Must Do Tests:**
+- Write one test for each item in the 'Must Do' section
+- Tests should verify the behavior/contract, not implementation details
+
+Test Code Requirements:
+- Use pytest fixtures for shared setup
+- Include full type hints
+- Use descriptive test names
+- Keep tests focused and independent
+
+### Step 3: Validate
+
+Run validation: `pytest tests/ -v`
+
+Iterate until all tests pass.
+Maximum iterations: 5
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

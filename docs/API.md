@@ -22,3 +22,21 @@ Implementation of `BaseProvider` using Anthropic's Claude.
 - Uses `AsyncAnthropic` for non-blocking streaming.
 - **Error Handling**: Implements automatic loopback signal reconnection on streaming errors to ensure system stability.
 - **Configuration**: Managed via `ClaudeConfig` (model, max_tokens, temperature).
+
+## UI Components
+
+### StealthOverlay
+
+The transparent overlay used to display transcriptions and AI responses.
+
+**Methods:**
+- `show_transcript(text: str) -> None`: Displays the captured transcript text above the response area.
+- `clear_and_show() -> None`: Clears previous content and ensures the overlay is visible.
+- `show_response(text: str) -> None`: Displays the final response or status message.
+- `show_error(error: str) -> None`: Displays an error message in the overlay.
+
+## Hotkeys
+
+- **F9**: Start/Stop recording (Toggle).
+- **F10**: Retry last transcript.
+- **Escape**: Cancel current response streaming.

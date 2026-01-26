@@ -224,6 +224,21 @@ class StealthOverlay(QWidget):
 
         container_layout.addWidget(self._text_edit)
 
+        self._cheatsheet_label = QLabel("Esc: Close  •  Drag: Move  •  Corner: Resize")
+        self._cheatsheet_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._cheatsheet_label.setStyleSheet(f"""
+            QLabel {{
+                color: {THEME_TEXT_MUTED};
+                background-color: transparent;
+                padding: 4px;
+            }}
+        """)
+        cheatsheet_font = QFont()
+        cheatsheet_font.setFamilies(["JetBrains Mono", "Consolas", "Courier New"])
+        cheatsheet_font.setPointSize(FONT_SIZE_PT - 2)
+        self._cheatsheet_label.setFont(cheatsheet_font)
+        container_layout.addWidget(self._cheatsheet_label)
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self._container)

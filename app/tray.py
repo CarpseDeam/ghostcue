@@ -696,6 +696,7 @@ Output ONLY the commit message, nothing else."""
             self._pending_transcript = transcript
             self._toolbar.set_audio_processing(True)
             self._overlay.show_response("Processing...")
+            self._overlay.show_transcript(transcript)
             self._overlay.start_streaming_response()
             messages = (
                 self._session_manager.get_messages()
@@ -731,6 +732,7 @@ Output ONLY the commit message, nothing else."""
                 self._is_responding = True
                 self._pending_transcript = transcript
                 self._toolbar.set_audio_processing(True)
+                self._overlay.show_transcript(transcript)
                 self._overlay.start_streaming_response()
                 messages = (
                     self._session_manager.get_messages()
@@ -777,6 +779,7 @@ Output ONLY the commit message, nothing else."""
         messages: list[dict[str, str]] | None,
     ) -> None:
         """Stream response from active provider and track in session if persistent mode enabled."""
+        self._last_transcript = transcript
         response = await self._active_provider.stream_response(
             transcript, messages, self._system_prompt
         )

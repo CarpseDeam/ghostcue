@@ -15,3 +15,12 @@ Providers (such as `ClaudeProvider`) utilize asynchronous clients (`AsyncAnthrop
 A robust error recovery mechanism is implemented in the streaming pipeline:
 - **Signal Reconnection**: On streaming errors, the application attempts to reconnect loopback signals to ensure subsequent requests can proceed.
 - **Graceful Failure**: Errors are caught and emitted via the `error_occurred` signal, allowing the UI to notify the user while maintaining stable application state.
+
+## Interview Recovery Features
+
+To improve reliability during live sessions, the application implements several recovery mechanisms:
+
+- **Transcript Tracking**: The last captured transcript is stored to allow for immediate retries.
+- **Manual Retry (F10)**: Users can re-trigger the generation process for the last transcript if the response was interrupted or unsatisfactory.
+- **Manual Cancellation (Escape)**: Ongoing response generation can be cancelled immediately, returning the UI to a ready state.
+- **Visual Context**: The overlay displays the "heard" transcript above the AI response, providing clear context for the generated output.
