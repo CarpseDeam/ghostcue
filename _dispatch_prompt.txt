@@ -30,18 +30,35 @@ Only write tests.
 
 ## THE SPECIFICATION
 
-# Specification: UnitTestSuite
-Tier: FEATURE
+# Specification: ErrorRecoveryAndAsyncClaude
+Tier: HOTFIX
 
 ## Description
-Build a proper pytest-based unit test suite for the widget-helper project. The existing files in `tests/` are integration/manual tests - create proper unit tests.
+Improve reliability and latency for widget-helper interview tool.
+
+## Must Do
+- Add `self._reconnect_loopback_signals()` call in `_on_streaming_error`
+- Convert ClaudeProvider to use AsyncAnthropic
+- Preserve all existing signal emissions (text_chunk, response_complete, error_occurred)
+- Keep type hints and docstrings
+
+## Must Not Do
+- Change any other files
+- Modify GeminiProvider
+- Change the BaseProvider interface
+- Add new dependencies (anthropic already supports async)
+
+## Edge Cases
+- API key missing → still emit error_occurred signal
+- Mid-stream failure → emit error_occurred, return empty string
+- Empty response → still emit response_complete
 
 ## Validation
 - Tests: pytest tests/ -v
 
 ## YOUR TASK
 
-Create a pytest test suite at: `tests/test_unittestsuite.py`
+Create a pytest test suite at: `tests/test_errorrecoveryandasyncclaude.py`
 
 Test Generation Rules:
 1. Create one test per 'Must Do' requirement

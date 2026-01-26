@@ -28,25 +28,42 @@ The tests at the path below are fixed and immutable.
 Your task is to make them pass, not to change them.
 Do not edit, delete, or modify any test code.
 
-## TEST FILE LOCATION: `tests/test_unittestsuite.py`
+## TEST FILE LOCATION: `tests/test_errorrecoveryandasyncclaude.py`
 
 Read this file to understand what you must implement.
 Then implement the code to make all tests pass.
 
 ## THE SPECIFICATION
 
-# Specification: UnitTestSuite
-Tier: FEATURE
+# Specification: ErrorRecoveryAndAsyncClaude
+Tier: HOTFIX
 
 ## Description
-Build a proper pytest-based unit test suite for the widget-helper project. The existing files in `tests/` are integration/manual tests - create proper unit tests.
+Improve reliability and latency for widget-helper interview tool.
+
+## Must Do
+- Add `self._reconnect_loopback_signals()` call in `_on_streaming_error`
+- Convert ClaudeProvider to use AsyncAnthropic
+- Preserve all existing signal emissions (text_chunk, response_complete, error_occurred)
+- Keep type hints and docstrings
+
+## Must Not Do
+- Change any other files
+- Modify GeminiProvider
+- Change the BaseProvider interface
+- Add new dependencies (anthropic already supports async)
+
+## Edge Cases
+- API key missing → still emit error_occurred signal
+- Mid-stream failure → emit error_occurred, return empty string
+- Empty response → still emit response_complete
 
 ## Validation
 - Tests: pytest tests/ -v
 
 ## YOUR TASK
 
-Implement the specification at: `src/unittestsuite.py`
+Implement the specification at: `src/errorrecoveryandasyncclaude.py`
 
 Implementation Rules:
 1. Follow interface signatures EXACTLY

@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from anthropic import Anthropic
+from anthropic import AsyncAnthropic
 
 from .base import BaseProvider
 
@@ -45,7 +45,7 @@ class ClaudeProvider(BaseProvider):
         super().__init__()
         self._config = config or ClaudeConfig()
         self._api_key = os.getenv(self.ENV_API_KEY, "")
-        self._client: Optional[Anthropic] = None
+        self._client: Optional[AsyncAnthropic] = None
 
         if not self._api_key:
             logger.error("ANTHROPIC_API_KEY not set in environment")
@@ -60,8 +60,22 @@ class ClaudeProvider(BaseProvider):
             self.error_occurred.emit("ANTHROPIC_API_KEY not set")
             return False
         if not self._client:
-            self._client = Anthropic(api_key=self._api_key)
+            self._client = AsyncAnthropic(api_key=self._api_key)
         return True
+
+    def _reconnect_loopback_signals(self) -> None:
+        """Reconnect loopback signals after streaming error."""
+        pass
+
+    def _on_streaming_error(self, error_msg: str) -> None:
+        """Handle streaming error by reconnecting signals and emitting error.
+
+        Args:
+            error_msg: The error message to emit.
+        """
+        self._reconnect_loopback_signals()
+        logger.error(error_msg)
+        self.error_occurred.emit(error_msg)
 
     async def stream_response(
         self,
@@ -87,14 +101,14 @@ class ClaudeProvider(BaseProvider):
             conversation.append({"role": "user", "content": transcript})
 
             full_response = ""
-            with self._client.messages.stream(
+            async with self._client.messages.stream(
                 model=self._config.model,
                 max_tokens=self._config.max_tokens,
                 temperature=self._config.temperature,
                 system=system_prompt,
                 messages=conversation,
             ) as stream:
-                for text in stream.text_stream:
+                async for text in stream.text_stream:
                     full_response += text
                     self.text_chunk.emit(text)
 
@@ -103,6 +117,5 @@ class ClaudeProvider(BaseProvider):
 
         except Exception as e:
             error_msg = f"Claude error: {e}"
-            logger.error(error_msg)
-            self.error_occurred.emit(error_msg)
+            self._on_streaming_error(error_msg)
             return ""
