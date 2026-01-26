@@ -151,6 +151,22 @@ class StealthOverlay(QWidget):
 
         container_layout.addLayout(header_layout)
 
+        self._transcript_label = QLabel()
+        self._transcript_label.setWordWrap(True)
+        self._transcript_label.setStyleSheet(f"""
+            QLabel {{
+                color: {THEME_TEXT_MUTED};
+                background-color: transparent;
+                padding: 4px;
+            }}
+        """)
+        transcript_font = QFont()
+        transcript_font.setFamilies(["JetBrains Mono", "Consolas", "Courier New"])
+        transcript_font.setPointSize(FONT_SIZE_PT - 1)
+        self._transcript_label.setFont(transcript_font)
+        self._transcript_label.hide()
+        container_layout.addWidget(self._transcript_label)
+
         self._interim_label = QLabel()
         self._interim_label.setWordWrap(True)
         self._interim_label.setStyleSheet(f"""
@@ -223,6 +239,10 @@ class StealthOverlay(QWidget):
     def _show_interim(self, text: str) -> None:
         self._interim_label.setText(f'"{text}"')
         self._interim_label.show()
+
+    def show_transcript(self, text: str) -> None:
+        self._transcript_label.setText(text)
+        self._transcript_label.show()
 
     def _copy_to_clipboard(self) -> None:
         text = self._response_text or self._text_edit.toPlainText()

@@ -30,35 +30,43 @@ Only write tests.
 
 ## THE SPECIFICATION
 
-# Specification: ErrorRecoveryAndAsyncClaude
-Tier: HOTFIX
+# Specification: InterviewRecoveryFeatures
+Tier: FEATURE
 
 ## Description
-Improve reliability and latency for widget-helper interview tool.
+Add three recovery features for live interview reliability.
+
+## Interface
+- `StealthOverlay.show_transcript(text: str) -> None` — Display heard text above response
+- `TrayApp._on_retry_hotkey() -> None` — Re-send last transcript
+- `TrayApp._on_cancel_response() -> None` — Cancel current streaming
 
 ## Must Do
-- Add `self._reconnect_loopback_signals()` call in `_on_streaming_error`
-- Convert ClaudeProvider to use AsyncAnthropic
-- Preserve all existing signal emissions (text_chunk, response_complete, error_occurred)
-- Keep type hints and docstrings
+- Store last transcript for retry functionality
+- Show transcript label above response in overlay
+- Track streaming task for cancellation
+- Wire up F10 and Escape hotkeys via pynput
+- Keep transcript visible during response streaming
+- Show "Cancelled - press F10 to retry" message on cancel
 
 ## Must Not Do
-- Change any other files
-- Modify GeminiProvider
-- Change the BaseProvider interface
-- Add new dependencies (anthropic already supports async)
+- Change provider implementations
+- Modify SessionManager
+- Change the audio capture flow
+- Add new dependencies
 
 ## Edge Cases
-- API key missing → still emit error_occurred signal
-- Mid-stream failure → emit error_occurred, return empty string
-- Empty response → still emit response_complete
+- F10 with no previous transcript → ignore silently
+- F10 while already responding → ignore silently
+- Escape when not responding → ignore silently
+- Cancel then retry → should work (signals reconnected)
 
 ## Validation
 - Tests: pytest tests/ -v
 
 ## YOUR TASK
 
-Create a pytest test suite at: `tests/test_errorrecoveryandasyncclaude.py`
+Create a pytest test suite at: `tests/test_interviewrecoveryfeatures.py`
 
 Test Generation Rules:
 1. Create one test per 'Must Do' requirement

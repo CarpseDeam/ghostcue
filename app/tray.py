@@ -366,6 +366,7 @@ class TrayApp:
         self._streaming_task: Optional[asyncio.Task] = None
         self._hotkey_listener: Optional[pynput_keyboard.Listener] = None
         self._pending_transcript: str = ""
+        self._last_transcript: str = ""
         self._system_prompt = self._build_system_prompt()
 
         self._overlay = StealthOverlay(config)
@@ -573,6 +574,10 @@ TONE: Confident peer. No hedging like "I think maybe..." - speak with authority.
                         self._signals.hotkey_pressed.emit()
                     else:
                         print("[DEBUG] F9 ignored (key repeat)")
+                elif key == pynput_keyboard.Key.f10:
+                    self._on_retry_hotkey()
+                elif key == pynput_keyboard.Key.esc:
+                    self._on_cancel_response()
             except Exception as e:
                 print(f"[DEBUG] Hotkey callback error: {e}")
 
@@ -586,9 +591,9 @@ TONE: Confident peer. No hedging like "I think maybe..." - speak with authority.
         try:
             self._hotkey_listener = pynput_keyboard.Listener(on_press=on_press, on_release=on_release)
             self._hotkey_listener.start()
-            print("[DEBUG] F9 hotkey registered via pynput")
+            print("[DEBUG] F9/F10/Escape hotkeys registered via pynput")
         except Exception as e:
-            print(f"[DEBUG] Failed to register F9 hotkey: {e}")
+            print(f"[DEBUG] Failed to register hotkeys: {e}")
 
     def _on_clipboard_change(self, payload: ClipboardPayload) -> None:
         self._signals.clipboard_changed.emit(payload)
@@ -791,6 +796,7 @@ Output ONLY the commit message, nothing else."""
     def _on_streaming_error(self, error: str) -> None:
         self._is_recording = False
         self._is_responding = False
+        self._reconnect_loopback_signals()
         self._toolbar.set_recording_state(False)
         self._toolbar.set_audio_processing(False)
         self._toolbar.set_processing(False)
@@ -803,6 +809,31 @@ Output ONLY the commit message, nothing else."""
                 self._overlay.show_response(response)
             else:
                 self._typer.type_to_notepad(response)
+
+    def _on_retry_hotkey(self) -> None:
+        if not self._last_transcript or self._is_responding:
+            return
+        self._is_responding = True
+        self._overlay.clear_and_show()
+        self._overlay.show_transcript(self._last_transcript)
+        self._overlay.start_streaming_response()
+        messages = (
+            self._session_manager.get_messages()
+            if self._session_manager.persistent_mode
+            else None
+        )
+        asyncio.run_coroutine_threadsafe(
+            self._stream_and_track_response(self._last_transcript, messages),
+            self._loop
+        )
+
+    def _on_cancel_response(self) -> None:
+        if not self._is_responding:
+            return
+        if self._streaming_task:
+            self._streaming_task.cancel()
+        self._is_responding = False
+        self._overlay.show_response("Cancelled - press F10 to retry")
 
     def _on_provider_change(self, provider_name: str) -> None:
         """Handle provider selection change from menu."""
