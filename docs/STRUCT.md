@@ -25,6 +25,7 @@
 - `clipboard.py`: Clipboard monitoring utility
 - `deepgram_client.py`: Deepgram transcription client
 - `loopback_client.py`: System audio capture client
+- `loopback_worker.py`: Background worker for audio streaming
 - `ocr.py`: Windows OCR integration
 - `overlay.py`: HUD/Overlay UI component
 - `recorder.py`: Audio recording management
@@ -48,4 +49,4 @@
 
 - Files: ~20 core source files
 - Directories: 5 major directories
-- Tests: 8+ test suites
+- Tests: 10+ test suites

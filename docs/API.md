@@ -29,6 +29,10 @@ Implementation of `BaseProvider` using Anthropic's Claude.
 
 The transparent overlay used to display transcriptions and AI responses.
 
+**Features:**
+- **Markdown Rendering**: Supports code blocks and inline formatting.
+- **Cheat Sheet**: Displays a persistent footer with hotkey reminders (F9, F10, Esc, Copy).
+
 **Methods:**
 - `show_transcript(text: str) -> None`: Displays the captured transcript text above the response area.
 - `clear_and_show() -> None`: Clears previous content and ensures the overlay is visible.
@@ -37,6 +41,14 @@ The transparent overlay used to display transcriptions and AI responses.
 
 ## Hotkeys
 
+### Global Hotkeys
 - **F9**: Start/Stop recording (Toggle).
 - **F10**: Retry last transcript.
 - **Escape**: Cancel current response streaming.
+
+### Overlay Controls
+- **F9**: Start/Stop recording.
+- **F10**: Retry last transcript.
+- **Escape**: Cancel response or hide overlay.
+- **Left Mouse Drag**: Move overlay.
+- **Bottom-Right Corner**: Resize overlay.
