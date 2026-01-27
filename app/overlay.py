@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+import pyperclip
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QApplication, QSizeGrip
 )
@@ -260,14 +262,15 @@ class StealthOverlay(QWidget):
         self._transcript_label.show()
 
     def _copy_to_clipboard(self) -> None:
+        """Copy response text to system clipboard."""
         text = self._response_text or self._text_edit.toPlainText()
-        print(f"[DEBUG] Copy clicked, text length: {len(text) if text else 0}")
         if text:
-            clipboard = QApplication.clipboard()
-            clipboard.setText(text, QApplication.clipboard().Mode.Clipboard)
-            print("[DEBUG] Clipboard write complete")
-        else:
-            print("[DEBUG] No text to copy")
+            try:
+                pyperclip.copy(text)
+            except Exception:
+                clipboard = QApplication.clipboard()
+                clipboard.setText(text)
+                QApplication.processEvents()
 
     def _append_text(self, text: str) -> None:
         self._response_text += text

@@ -1,84 +1,39 @@
-# Spec-Driven Implementation
+## Fix: Clipboard copy not working on Windows
 
-## CRITICAL: TRUST THE SPEC
+### Problem
+In `app/overlay.py`, the `_copy_to_clipboard` method writes to clipboard but data doesn't persist on Windows. PyQt6 clipboard.setText() returns but clipboard.text() shows 0 length immediately after.
 
-The specification below is COMPLETE. Do not:
-- Read README, ARCHITECTURE, or documentation files
-- Search for patterns or conventions in the codebase
-- Explore directory structures
-- Read files unrelated to your implementation
+Debug output showed:
+```
+[COPY] _response_text length: 1462
+[COPY] Final text length: 1462
+[COPY] Wrote to clipboard, verify: 0
+```
 
-Only read files that:
-1. You need to import from (check the target path's neighbors)
-2. Contain types/classes referenced in the interface
+### Solution
+Use pyperclip as a reliable cross-platform clipboard solution instead of Qt's clipboard.
 
-The spec tells you exactly what to build. Trust it.
+1. Add `import pyperclip` at top of `app/overlay.py`
+2. Replace the `_copy_to_clipboard` method with:
 
-## CIRCUIT BREAKER
+```python
+def _copy_to_clipboard(self) -> None:
+    """Copy response text to system clipboard."""
+    text = self._response_text or self._text_edit.toPlainText()
+    if text:
+        try:
+            import pyperclip
+            pyperclip.copy(text)
+        except Exception:
+            # Fallback to Qt clipboard
+            clipboard = QApplication.clipboard()
+            clipboard.setText(text)
+            QApplication.processEvents()
+```
 
-If you have made 8+ file reads without writing any code, STOP.
-You are exploring instead of implementing. The spec is complete.
-Write the implementation now with what you know.
+3. Add pyperclip to requirements.txt if not already present
 
-## THE SPECIFICATION
-
-# Specification: FixEncodingAndClipboard
-Tier: HOTFIX
-
-## Description
-Two critical bugs to fix:
-
-## Must Do
-- Replace all unicode characters in context.txt with ASCII
-- Ensure clipboard copy works from overlay
-- Test that copy button actually copies text
-
-## Must Not Do
-- Change any other functionality
-- Modify hotkey behavior
-- Touch the silence detection code
-
-## Validation
-- Tests: pytest tests/ -v
-
-## YOUR TASK
-
-**Tier: HOTFIX** - Minimal scope, fast iteration.
-- Focus on the specific bug/issue only
-- 1-3 targeted tests maximum
-
-### Step 1: Implement the Interface
-
-Implementation location: `src/fixencodingandclipboard.py`
-
-Implementation Rules:
-1. Follow interface signatures EXACTLY as specified
-2. Handle all edge cases as specified
-3. Ensure preconditions are checked
-4. Ensure postconditions are satisfied
-5. Respect all 'Must Not Do' constraints
-
-### Step 2: Write Tests
-
-Test file location: `tests/test_fixencodingandclipboard.py`
-
-After implementing, write tests that verify contract and behavior:
-
-**Must Do Tests:**
-- Write one test for each item in the 'Must Do' section
-- Tests should verify the behavior/contract, not implementation details
-
-Test Code Requirements:
-- Use pytest fixtures for shared setup
-- Include full type hints
-- Use descriptive test names
-- Keep tests focused and independent
-
-### Step 3: Validate
-
-Run validation: `pytest tests/ -v`
-
-Iterate until all tests pass.
-Maximum iterations: 5
+### Validation
+Run the app, get a response in overlay, click copy button [C], paste in notepad - should work.
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

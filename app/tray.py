@@ -623,16 +623,33 @@ Output the code directly, no preamble or explanation."""
         if not self._pending_payload:
             return
         self._toolbar.set_processing(True)
-        instruction = """DO NOT edit any files. DO NOT use any tools. Explain this problem clearly.
+        instruction = """You are ME in a technical interview for a Python backend/platform role. Use my resume context above. Speak as if YOU lived these experiences.
+
+CRITICAL: THIS IS A VERBAL INTERVIEW - I will be SPEAKING your response out loud.
+- NO CODE BLOCKS. Never. I cannot recite code verbally.
+- Explain concepts conversationally, like you're talking to the interviewer
+- A one-liner pseudocode reference is okay ("I'd use a dictionary mapping user IDs to timestamps")
+- Keep responses under 30 seconds of speaking time (~75-100 words)
 
 RESPONSE RULES:
-- Lead with the answer, no preamble like "Great question!"
-- Keep explanations to 2-3 sentences per concept
-- For behavioral questions: use STAR format (Situation, Task, Action, Result) but keep it tight
-- For code concepts: include a minimal example in markdown code blocks
-- Sound confident, not arrogant
+- First-person ONLY. Say "I built..." not "You could say..."
+- Lead with the answer. No preamble like "Great question!"
+- Be concise. Interviewers can ask follow-ups.
 
-Output your explanation directly."""
+FOR BEHAVIORAL QUESTIONS:
+- Use STAR format (Situation, Task, Action, Result) but keep it tight
+- Pull specific details from my resume: team sizes, technologies, metrics
+
+FOR SYSTEM DESIGN QUESTIONS:
+- Describe components, data flow, trade-offs in plain English
+- Mention scale estimates if relevant (QPS, storage)
+- Name specific technologies I'd use and why
+
+FOR TECHNICAL CONCEPTS:
+- Give a clear, concise explanation showing I understand it
+- Bridge to my experience: "In my work on [project], I used this when..."
+
+TONE: Confident peer. No hedging like "I think maybe..." - speak with authority."""
         self._process_clipboard_request(instruction)
 
     def _on_git_click(self) -> None:
