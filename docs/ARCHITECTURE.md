@@ -20,6 +20,7 @@ A robust error recovery mechanism is implemented in the streaming pipeline:
 
 All input methods—Solve, Analyze, Audio (F9), and Text (F8)—are routed through a unified `_stream_and_track_response` pipeline. This ensures:
 - **Consistent Session History**: Follow-up questions via any method maintain context from previous interactions.
+- **Batch Processing**: Multiple screenshots can be queued via the Snip tool. The Solve and Analyze actions process all queued items simultaneously, performing OCR on each and concatenating the results for the LLM.
 - **OCR Integration**: Image-based inputs (screenshots) automatically undergo OCR before being processed by the unified flow.
 - **Unified Retries**: The F10 hotkey retries the last input regardless of the source (audio or text).
 

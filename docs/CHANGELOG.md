@@ -2,6 +2,7 @@
 
 All notable changes to this project.
 
+- 2026-01-26: feat: implement multi-snip queueing for batch OCR and analysis
 - 2026-01-26: refactor: unify Solve, Analyze, Audio, and Text inputs through a single session flow
 - 2026-01-26: feat: add session reset button (R) to floating toolbar
 - 2026-01-26: feat: add F8 hotkey for text input from clipboard with session memory

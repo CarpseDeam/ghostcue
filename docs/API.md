@@ -46,10 +46,10 @@ The draggable toolbar providing quick access to primary features.
 **Buttons:**
 - **Snip (\u25f2)**: Open Windows Screen Snip tool.
 - **Audio (\u25cf)**: Toggle audio recording (same as F9).
-- **Solve (S)**: Process clipboard content with "Solve" instruction.
-- **Analyze (A)**: Process clipboard content with "Interview Analyze" instruction.
-- **Git (G)**: Generate commit message from clipboard image.
-- **Reset (R)**: Clear current session history.
+- **Solve (S)**: Process queued content with "Solve" instruction. Displays count (e.g., `S(2)`) when multiple items are queued.
+- **Analyze (A)**: Process queued content with "Interview Analyze" instruction. Displays count (e.g., `A(2)`) when multiple items are queued.
+- **Git (G)**: Generate commit message from the most recent clipboard image.
+- **Reset (R)**: Clear current session history and the pending snip queue.
 
 ## Hotkeys
 
