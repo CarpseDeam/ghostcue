@@ -26,10 +26,19 @@ To improve reliability during live sessions, the application implements several 
 - **Manual Cancellation (Escape)**: Ongoing response generation can be cancelled immediately, returning the UI to a ready state.
 - **Visual Context**: The overlay displays the "heard" transcript above the AI response, providing clear context for the generated output.
 
+## Interview Mode Persona
+
+The application is specifically tuned for verbal interview scenarios where responses must be spoken aloud by the user:
+
+- **Verbal Optimization**: Prompts are engineered to exclude code blocks and complex markdown, focusing on conversational explanations that are easy to recite.
+- **First-Person Delivery**: Responses are generated in the first person ("I built...", "In my experience...") to allow the user to mirror the AI's output directly.
+- **Conciseness**: AI behavior is constrained to ~30 seconds of speaking time (~75-100 words) per response to maintain a natural interview flow.
+
 ## User Interface & Usability
 
 The `StealthOverlay` is designed for minimal intrusion while providing essential status information:
 
 - **Interactive Hints**: A subtle footer provides immediate guidance on hotkeys: `F9 Record | F10 Retry | Esc Cancel | [C] Copy`.
+- **Reliable Clipboard**: Uses `pyperclip` as a cross-platform backend to ensure copied text persists in the system clipboard even after the overlay state changes.
 - **State Feedback**: The UI uses specific labels (e.g., "Listening...", "Processing...", "Thinking...") to keep the user informed of the background worker's status.
 - **Recovery Awareness**: On cancellation, the overlay explicitly prompts the user with the retry hotkey (F10), reducing friction during high-pressure sessions.
