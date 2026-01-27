@@ -21,7 +21,15 @@ Implementation of `BaseProvider` using Anthropic's Claude.
 **Implementation Details:**
 - Uses `AsyncAnthropic` for non-blocking streaming.
 - **Error Handling**: Implements automatic loopback signal reconnection on streaming errors to ensure system stability.
-- **Configuration**: Managed via `ClaudeConfig` (model, max_tokens, temperature).
+- **Configuration**: Managed via `ClaudeConfig` (model, max_tokens=2048, temperature).
+
+### GeminiProvider
+
+Implementation of `BaseProvider` using Google Gemini.
+
+**Implementation Details:**
+- Uses Google GenAI SDK for streaming responses.
+- **Configuration**: Uses `max_output_tokens=2048` by default for comprehensive responses.
 
 ## UI Components
 

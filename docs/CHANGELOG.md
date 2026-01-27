@@ -2,6 +2,7 @@
 
 All notable changes to this project.
 
+- 2026-01-27: fix: enable session persistence by default and increase token limits to 2048 for Claude and Gemini
 - 2026-01-26: feat: implement multi-snip queueing for batch OCR and analysis
 - 2026-01-26: refactor: unify Solve, Analyze, Audio, and Text inputs through a single session flow
 - 2026-01-26: feat: add session reset button (R) to floating toolbar
