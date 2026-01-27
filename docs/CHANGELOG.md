@@ -2,6 +2,7 @@
 
 All notable changes to this project.
 
+- 2026-01-26: feat: add F8 hotkey for text input from clipboard with session memory
 - 2026-01-26: fix: use pyperclip for reliable clipboard persistence on Windows
 - 2026-01-26: feat: update interview prompt to enforce verbal-friendly, code-free responses
 - 2026-01-26: fix: resolve encoding issues in context.txt and update overlay UI for manual control

@@ -1,71 +1,182 @@
-## Feature: F8 Hotkey for Text Input with Session Memory
+## Unify All Inputs Through Session Flow
 
 ### Overview
-Add F8 hotkey that grabs clipboard text and sends it through the same flow as audio (F9), maintaining conversation history for follow-ups.
+Route ALL input methods (Solve, Analyze, Audio, Text) through the same `_stream_and_track_response` flow with session history. Add reset button to clear session.
 
 ### File: `app/tray.py`
 
-### Changes Required
+### Changes
 
-1. **Register F8 hotkey** in `_setup_hotkey` method, alongside F9/F10/Escape:
+#### 1. Rewrite `_on_solve_click` to use session flow:
 ```python
-if key == keyboard.Key.f8:
-    self._signals.text_input_pressed.emit()
-```
-
-2. **Add signal** to SignalBridge class:
-```python
-text_input_pressed = pyqtSignal()
-```
-
-3. **Connect signal** in `__init__`:
-```python
-self._signals.text_input_pressed.connect(self._on_text_input)
-```
-
-4. **Add handler method** `_on_text_input`:
-```python
-def _on_text_input(self) -> None:
-    """Handle F8 - grab clipboard text and send to AI with session context."""
-    clipboard = QApplication.clipboard()
-    text = clipboard.text()
-    
-    if not text or not text.strip():
-        self._overlay.show_response("No text in clipboard")
+def _on_solve_click(self) -> None:
+    if not self._pending_payload:
         return
-    
-    # Show what we're sending (like transcript display)
+    self._toolbar.set_processing(True)
     self._overlay.clear_and_show()
-    self._overlay.show_transcript(f"[Clipboard] {text[:100]}..." if len(text) > 100 else f"[Clipboard] {text}")
+    
+    # OCR if image
+    if self._pending_payload.payload_type == PayloadType.IMAGE:
+        from app.ocr import WindowsOCR
+        ocr = WindowsOCR()
+        ocr_result = ocr.extract_text(self._pending_payload.content)
+        if not ocr_result.success or not ocr_result.text:
+            self._overlay.show_error("OCR failed or no text detected")
+            self._toolbar.set_processing(False)
+            return
+        text = ocr_result.text
+    else:
+        text = self._pending_payload.content
+    
+    # Prepend solve instruction
+    instruction = """Solve this problem. Output ONLY the solution code.
+CODE RULES:
+- Use markdown code blocks with language tags
+- Add brief inline comments on non-obvious lines only
+- Include time/space complexity as a comment at the end
+- Prefer readability over cleverness"""
+    
+    prompt = f"{instruction}\n\nProblem:\n{text}"
+    
+    self._overlay.show_transcript(f"[Solve] {text[:80]}..." if len(text) > 80 else f"[Solve] {text}")
     self._overlay.start_streaming_response()
+    self._last_transcript = prompt
     
-    # Store for F10 retry
-    self._last_transcript = text
-    
-    # Get session history if persistent mode
-    messages = (
-        self._session_manager.get_messages()
-        if self._session_manager.persistent_mode
-        else None
-    )
-    
-    # Send through same flow as audio
+    messages = self._session_manager.get_messages() if self._session_manager.persistent_mode else None
     self._is_responding = True
     asyncio.run_coroutine_threadsafe(
-        self._stream_and_track_response(text, messages),
+        self._stream_and_track_response(prompt, messages),
         self._loop
     )
 ```
 
-5. **Update cheatsheet** in `app/overlay.py` - find the cheatsheet label text and add F8:
-Change from: `"F9 Record | F10 Retry | Esc Cancel | [C] Copy"` (or similar)
-To: `"F8 Text | F9 Record | F10 Retry | Esc Cancel"`
+#### 2. Rewrite `_on_explain_click` (Analyze) similarly:
+```python
+def _on_explain_click(self) -> None:
+    if not self._pending_payload:
+        return
+    self._toolbar.set_processing(True)
+    self._overlay.clear_and_show()
+    
+    # OCR if image
+    if self._pending_payload.payload_type == PayloadType.IMAGE:
+        from app.ocr import WindowsOCR
+        ocr = WindowsOCR()
+        ocr_result = ocr.extract_text(self._pending_payload.content)
+        if not ocr_result.success or not ocr_result.text:
+            self._overlay.show_error("OCR failed or no text detected")
+            self._toolbar.set_processing(False)
+            return
+        text = ocr_result.text
+    else:
+        text = self._pending_payload.content
+    
+    # Use the existing interview instruction (already updated in _on_explain_click)
+    instruction = """You are ME in a technical interview for a Python backend/platform role. Use my resume context above. Speak as if YOU lived these experiences.
+
+CRITICAL: THIS IS A VERBAL INTERVIEW - I will be SPEAKING your response out loud.
+- NO CODE BLOCKS. Never. I cannot recite code verbally.
+- Explain concepts conversationally, like you're talking to the interviewer
+- A one-liner pseudocode reference is okay
+- Keep responses under 30 seconds of speaking time (~75-100 words)
+
+RESPONSE RULES:
+- First-person ONLY. Say "I built..." not "You could say..."
+- Lead with the answer. No preamble.
+- Be concise. Interviewers can ask follow-ups.
+
+FOR BEHAVIORAL: Use STAR format, pull from resume.
+FOR SYSTEM DESIGN: Components, data flow, trade-offs in plain English.
+FOR TECHNICAL: Clear explanation, bridge to experience.
+
+TONE: Confident peer."""
+
+    prompt = f"{instruction}\n\nQuestion:\n{text}"
+    
+    self._overlay.show_transcript(f"[Analyze] {text[:80]}..." if len(text) > 80 else f"[Analyze] {text}")
+    self._overlay.start_streaming_response()
+    self._last_transcript = prompt
+    
+    messages = self._session_manager.get_messages() if self._session_manager.persistent_mode else None
+    self._is_responding = True
+    asyncio.run_coroutine_threadsafe(
+        self._stream_and_track_response(prompt, messages),
+        self._loop
+    )
+```
+
+#### 3. Add reset button to FloatingToolbar
+
+In `FloatingToolbar.__init__`, add parameter:
+```python
+on_reset_click: Optional[Callable[[], None]] = None,
+```
+
+Store it:
+```python
+self._on_reset_callback = on_reset_click
+```
+
+Add button after git_btn (or wherever makes sense):
+```python
+self._reset_btn = QPushButton("R")
+self._reset_btn.setFixedSize(btn_size, btn_size)
+self._reset_btn.setToolTip("Reset conversation")
+self._reset_btn.clicked.connect(self._on_reset_click)
+self._reset_btn.setStyleSheet("""
+    QPushButton {
+        background-color: #7f8c8d;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: bold;
+    }
+    QPushButton:hover {
+        background-color: #95a5a6;
+    }
+""")
+layout.addWidget(self._reset_btn)
+```
+
+Add handler:
+```python
+def _on_reset_click(self) -> None:
+    if self._on_reset_callback:
+        self._on_reset_callback()
+```
+
+#### 4. In TrayApp, wire up reset
+
+In `_setup_toolbar`:
+```python
+self._toolbar = FloatingToolbar(
+    on_audio_click=self._on_audio_button_click,
+    on_solve_click=self._on_solve_click,
+    on_explain_click=self._on_explain_click,
+    on_git_click=self._on_git_click,
+    on_reset_click=self._on_reset_click,  # Add this
+    config=self._config
+)
+```
+
+Add handler in TrayApp:
+```python
+def _on_reset_click(self) -> None:
+    """Clear session history."""
+    self._session_manager.clear()
+    self._overlay.show_response("Session cleared")
+```
+
+#### 5. Remove dead code
+- Remove `_process_clipboard_request` method (no longer used)
+- Can keep `Analyzer` class for now if git commit feature uses it, otherwise remove import
 
 ### Validation
-1. Copy some text to clipboard
-2. Press F8
-3. Should show "[Clipboard] {text}" then stream response
-4. Press F9 for follow-up question - should have context from F8 input
-5. F10 should retry the clipboard text
+1. Snip a problem, click Solve - should stream with session
+2. Ask follow-up via F9 audio - should have context
+3. Click Analyze on new snip - should add to same session  
+4. Click Reset (R) - should clear, show "Session cleared"
+5. Next input should start fresh
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

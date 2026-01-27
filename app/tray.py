@@ -19,7 +19,6 @@ from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup
 from config import Config
 from contracts import ClipboardPayload, PayloadType
 from app.clipboard import ClipboardMonitor
-from app.analyzer import Analyzer
 from app.typer import HumanTyper
 from app.stealth import make_stealth
 from app.overlay import StealthOverlay
@@ -49,6 +48,7 @@ class FloatingToolbar(QWidget):
         on_solve_click: Optional[Callable[[], None]] = None,
         on_explain_click: Optional[Callable[[], None]] = None,
         on_git_click: Optional[Callable[[], None]] = None,
+        on_reset_click: Optional[Callable[[], None]] = None,
         config: Config = None
     ) -> None:
         super().__init__()
@@ -57,6 +57,7 @@ class FloatingToolbar(QWidget):
         self._on_solve_callback = on_solve_click
         self._on_explain_callback = on_explain_click
         self._on_git_callback = on_git_click
+        self._on_reset_callback = on_reset_click
         self._config = config or Config()
         self._is_recording = False
         self._clipboard_ready = False
@@ -139,6 +140,25 @@ class FloatingToolbar(QWidget):
         self._update_git_style()
         layout.addWidget(self._git_btn)
 
+        self._reset_btn = QPushButton("R")
+        self._reset_btn.setFixedSize(btn_size, btn_size)
+        self._reset_btn.setToolTip("Reset conversation")
+        self._reset_btn.clicked.connect(self._on_reset_click)
+        self._reset_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7f8c8d;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #95a5a6;
+            }
+        """)
+        layout.addWidget(self._reset_btn)
+
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self._container)
@@ -161,6 +181,10 @@ class FloatingToolbar(QWidget):
     def _on_git_click(self) -> None:
         if self._on_git_callback and self._image_ready:
             self._on_git_callback()
+
+    def _on_reset_click(self) -> None:
+        if self._on_reset_callback:
+            self._on_reset_callback()
 
     def _update_solve_style(self) -> None:
         if self._solve_btn.isEnabled():
@@ -358,7 +382,6 @@ class TrayApp:
         self._signals.hotkey_pressed.connect(self._on_audio_button_click)
         self._signals.text_input_pressed.connect(self._on_text_input)
 
-        self._analyzer = Analyzer()
         self._typer = HumanTyper()
         self._session_manager = SessionManager()
         self._is_recording = False
@@ -558,6 +581,7 @@ TONE: Confident peer. No hedging like "I think maybe..." - speak with authority.
             on_solve_click=self._on_solve_click,
             on_explain_click=self._on_explain_click,
             on_git_click=self._on_git_click,
+            on_reset_click=self._on_reset_click,
             config=self._config
         )
         self._toolbar.show_in_corner()
@@ -612,49 +636,91 @@ TONE: Confident peer. No hedging like "I think maybe..." - speak with authority.
         if not self._pending_payload:
             return
         self._toolbar.set_processing(True)
-        instruction = """DO NOT edit any files. DO NOT use any tools. Analyze this problem and respond with ONLY the solution code.
+        self._overlay.clear_and_show()
 
+        if self._pending_payload.payload_type == PayloadType.IMAGE:
+            from app.ocr import WindowsOCR
+            ocr = WindowsOCR()
+            ocr_result = ocr.extract_text(self._pending_payload.content)
+            if not ocr_result.success or not ocr_result.text:
+                self._overlay.show_error("OCR failed or no text detected")
+                self._toolbar.set_processing(False)
+                return
+            text = ocr_result.text
+        else:
+            text = self._pending_payload.content
+
+        instruction = """Solve this problem. Output ONLY the solution code.
 CODE RULES:
 - Use markdown code blocks with language tags
 - Add brief inline comments on non-obvious lines only
-- Include time/space complexity as a comment at the end (e.g., # O(n) time, O(1) space)
-- Prefer readability over cleverness
+- Include time/space complexity as a comment at the end
+- Prefer readability over cleverness"""
 
-Output the code directly, no preamble or explanation."""
-        self._process_clipboard_request(instruction)
+        prompt = f"{instruction}\n\nProblem:\n{text}"
+
+        display = f"[Solve] {text[:80]}..." if len(text) > 80 else f"[Solve] {text}"
+        self._overlay.show_transcript(display)
+        self._overlay.start_streaming_response()
+        self._last_transcript = prompt
+
+        messages = self._session_manager.get_messages() if self._session_manager.persistent_mode else None
+        self._is_responding = True
+        asyncio.run_coroutine_threadsafe(
+            self._stream_and_track_response(prompt, messages),
+            self._loop
+        )
 
     def _on_explain_click(self) -> None:
         if not self._pending_payload:
             return
         self._toolbar.set_processing(True)
+        self._overlay.clear_and_show()
+
+        if self._pending_payload.payload_type == PayloadType.IMAGE:
+            from app.ocr import WindowsOCR
+            ocr = WindowsOCR()
+            ocr_result = ocr.extract_text(self._pending_payload.content)
+            if not ocr_result.success or not ocr_result.text:
+                self._overlay.show_error("OCR failed or no text detected")
+                self._toolbar.set_processing(False)
+                return
+            text = ocr_result.text
+        else:
+            text = self._pending_payload.content
+
         instruction = """You are ME in a technical interview for a Python backend/platform role. Use my resume context above. Speak as if YOU lived these experiences.
 
 CRITICAL: THIS IS A VERBAL INTERVIEW - I will be SPEAKING your response out loud.
 - NO CODE BLOCKS. Never. I cannot recite code verbally.
 - Explain concepts conversationally, like you're talking to the interviewer
-- A one-liner pseudocode reference is okay ("I'd use a dictionary mapping user IDs to timestamps")
+- A one-liner pseudocode reference is okay
 - Keep responses under 30 seconds of speaking time (~75-100 words)
 
 RESPONSE RULES:
 - First-person ONLY. Say "I built..." not "You could say..."
-- Lead with the answer. No preamble like "Great question!"
+- Lead with the answer. No preamble.
 - Be concise. Interviewers can ask follow-ups.
 
-FOR BEHAVIORAL QUESTIONS:
-- Use STAR format (Situation, Task, Action, Result) but keep it tight
-- Pull specific details from my resume: team sizes, technologies, metrics
+FOR BEHAVIORAL: Use STAR format, pull from resume.
+FOR SYSTEM DESIGN: Components, data flow, trade-offs in plain English.
+FOR TECHNICAL: Clear explanation, bridge to experience.
 
-FOR SYSTEM DESIGN QUESTIONS:
-- Describe components, data flow, trade-offs in plain English
-- Mention scale estimates if relevant (QPS, storage)
-- Name specific technologies I'd use and why
+TONE: Confident peer."""
 
-FOR TECHNICAL CONCEPTS:
-- Give a clear, concise explanation showing I understand it
-- Bridge to my experience: "In my work on [project], I used this when..."
+        prompt = f"{instruction}\n\nQuestion:\n{text}"
 
-TONE: Confident peer. No hedging like "I think maybe..." - speak with authority."""
-        self._process_clipboard_request(instruction)
+        display = f"[Analyze] {text[:80]}..." if len(text) > 80 else f"[Analyze] {text}"
+        self._overlay.show_transcript(display)
+        self._overlay.start_streaming_response()
+        self._last_transcript = prompt
+
+        messages = self._session_manager.get_messages() if self._session_manager.persistent_mode else None
+        self._is_responding = True
+        asyncio.run_coroutine_threadsafe(
+            self._stream_and_track_response(prompt, messages),
+            self._loop
+        )
 
     def _on_git_click(self) -> None:
         if not self._pending_payload or self._pending_payload.payload_type != PayloadType.IMAGE:
@@ -676,14 +742,6 @@ Output ONLY the commit message, nothing else."""
             self._claude.stream_vision_response(prompt, self._pending_payload.content),
             self._loop
         )
-
-    def _process_clipboard_request(self, instruction: str) -> None:
-        payload = self._pending_payload
-        def process() -> None:
-            result = self._analyzer.analyze(payload.content, instruction, payload.payload_type)
-            self._signals.analysis_complete.emit(result.response)
-        thread = threading.Thread(target=process, daemon=True)
-        thread.start()
 
     def _on_analysis_complete(self, response: str) -> None:
         self._toolbar.set_processing(False)
@@ -911,6 +969,11 @@ Output ONLY the commit message, nothing else."""
         self._session_manager.clear()
         self._update_clear_session_action()
         logger.debug("Session cleared via menu")
+
+    def _on_reset_click(self) -> None:
+        self._session_manager.clear()
+        self._update_clear_session_action()
+        self._overlay.show_response("Session cleared")
 
     def _update_clear_session_action(self) -> None:
         enabled = (

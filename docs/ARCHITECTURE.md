@@ -21,10 +21,11 @@ A robust error recovery mechanism is implemented in the streaming pipeline:
 To improve reliability during live sessions, the application implements several recovery mechanisms:
 
 - **Manual Control (F9)**: Automatic silence detection is disabled to give the user full control over recording starts and stops, preventing premature cut-offs.
-- **Transcript Tracking**: The last captured transcript is stored to allow for immediate retries.
+- **Text Input (F8)**: Users can grab text from the system clipboard and send it as a prompt, allowing for quick follow-ups on written content while maintaining session history.
+- **Transcript Tracking**: The last captured transcript (or clipboard text) is stored to allow for immediate retries.
 - **Manual Retry (F10)**: Users can re-trigger the generation process for the last transcript if the response was interrupted or unsatisfactory.
 - **Manual Cancellation (Escape)**: Ongoing response generation can be cancelled immediately, returning the UI to a ready state.
-- **Visual Context**: The overlay displays the "heard" transcript above the AI response, providing clear context for the generated output.
+- **Visual Context**: The overlay displays the "heard" transcript or source text above the AI response, providing clear context for the generated output.
 
 ## Interview Mode Persona
 
@@ -38,7 +39,7 @@ The application is specifically tuned for verbal interview scenarios where respo
 
 The `StealthOverlay` is designed for minimal intrusion while providing essential status information:
 
-- **Interactive Hints**: A subtle footer provides immediate guidance on hotkeys: `F9 Record | F10 Retry | Esc Cancel | [C] Copy`.
+- **Interactive Hints**: A subtle footer provides immediate guidance on hotkeys: `F8 Text | F9 Record | F10 Retry | Esc Cancel`.
 - **Reliable Clipboard**: Uses `pyperclip` as a cross-platform backend to ensure copied text persists in the system clipboard even after the overlay state changes.
 - **State Feedback**: The UI uses specific labels (e.g., "Listening...", "Processing...", "Thinking...") to keep the user informed of the background worker's status.
 - **Recovery Awareness**: On cancellation, the overlay explicitly prompts the user with the retry hotkey (F10), reducing friction during high-pressure sessions.
