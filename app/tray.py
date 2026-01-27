@@ -39,6 +39,7 @@ class SignalBridge(QObject):
     audio_complete = pyqtSignal(str)
     streaming_error = pyqtSignal(str)
     hotkey_pressed = pyqtSignal()
+    text_input_pressed = pyqtSignal()
 
 
 class FloatingToolbar(QWidget):
@@ -355,6 +356,7 @@ class TrayApp:
         self._signals.audio_complete.connect(self._on_audio_complete)
         self._signals.streaming_error.connect(self._on_streaming_error)
         self._signals.hotkey_pressed.connect(self._on_audio_button_click)
+        self._signals.text_input_pressed.connect(self._on_text_input)
 
         self._analyzer = Analyzer()
         self._typer = HumanTyper()
@@ -567,7 +569,9 @@ TONE: Confident peer. No hedging like "I think maybe..." - speak with authority.
     def _setup_hotkey(self) -> None:
         def on_press(key: pynput_keyboard.Key | pynput_keyboard.KeyCode | None) -> None:
             try:
-                if key == pynput_keyboard.Key.f9:
+                if key == pynput_keyboard.Key.f8:
+                    self._signals.text_input_pressed.emit()
+                elif key == pynput_keyboard.Key.f9:
                     if not self._f9_pressed:
                         self._f9_pressed = True
                         print("[DEBUG] F9 hotkey pressed!")
@@ -829,6 +833,34 @@ Output ONLY the commit message, nothing else."""
                 self._overlay.show_response(response)
             else:
                 self._typer.type_to_notepad(response)
+
+    def _on_text_input(self) -> None:
+        """Handle F8 - grab clipboard text and send to AI with session context."""
+        clipboard = QApplication.clipboard()
+        text = clipboard.text()
+
+        if not text or not text.strip():
+            self._overlay.show_response("No text in clipboard")
+            return
+
+        self._overlay.clear_and_show()
+        display_text = f"[Clipboard] {text[:100]}..." if len(text) > 100 else f"[Clipboard] {text}"
+        self._overlay.show_transcript(display_text)
+        self._overlay.start_streaming_response()
+
+        self._last_transcript = text
+
+        messages = (
+            self._session_manager.get_messages()
+            if self._session_manager.persistent_mode
+            else None
+        )
+
+        self._is_responding = True
+        asyncio.run_coroutine_threadsafe(
+            self._stream_and_track_response(text, messages),
+            self._loop
+        )
 
     def _on_retry_hotkey(self) -> None:
         if not self._last_transcript or self._is_responding:

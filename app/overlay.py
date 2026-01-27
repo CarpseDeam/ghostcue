@@ -226,7 +226,7 @@ class StealthOverlay(QWidget):
 
         container_layout.addWidget(self._text_edit)
 
-        self._cheatsheet_label = QLabel("F9 Record  |  F10 Retry  |  Esc Cancel  |  [C] Copy")
+        self._cheatsheet_label = QLabel("F8 Text  |  F9 Record  |  F10 Retry  |  Esc Cancel")
         self._cheatsheet_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cheatsheet_label.setStyleSheet(f"""
             QLabel {{

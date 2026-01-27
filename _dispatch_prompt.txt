@@ -1,39 +1,71 @@
-## Fix: Clipboard copy not working on Windows
+## Feature: F8 Hotkey for Text Input with Session Memory
 
-### Problem
-In `app/overlay.py`, the `_copy_to_clipboard` method writes to clipboard but data doesn't persist on Windows. PyQt6 clipboard.setText() returns but clipboard.text() shows 0 length immediately after.
+### Overview
+Add F8 hotkey that grabs clipboard text and sends it through the same flow as audio (F9), maintaining conversation history for follow-ups.
 
-Debug output showed:
-```
-[COPY] _response_text length: 1462
-[COPY] Final text length: 1462
-[COPY] Wrote to clipboard, verify: 0
-```
+### File: `app/tray.py`
 
-### Solution
-Use pyperclip as a reliable cross-platform clipboard solution instead of Qt's clipboard.
+### Changes Required
 
-1. Add `import pyperclip` at top of `app/overlay.py`
-2. Replace the `_copy_to_clipboard` method with:
-
+1. **Register F8 hotkey** in `_setup_hotkey` method, alongside F9/F10/Escape:
 ```python
-def _copy_to_clipboard(self) -> None:
-    """Copy response text to system clipboard."""
-    text = self._response_text or self._text_edit.toPlainText()
-    if text:
-        try:
-            import pyperclip
-            pyperclip.copy(text)
-        except Exception:
-            # Fallback to Qt clipboard
-            clipboard = QApplication.clipboard()
-            clipboard.setText(text)
-            QApplication.processEvents()
+if key == keyboard.Key.f8:
+    self._signals.text_input_pressed.emit()
 ```
 
-3. Add pyperclip to requirements.txt if not already present
+2. **Add signal** to SignalBridge class:
+```python
+text_input_pressed = pyqtSignal()
+```
+
+3. **Connect signal** in `__init__`:
+```python
+self._signals.text_input_pressed.connect(self._on_text_input)
+```
+
+4. **Add handler method** `_on_text_input`:
+```python
+def _on_text_input(self) -> None:
+    """Handle F8 - grab clipboard text and send to AI with session context."""
+    clipboard = QApplication.clipboard()
+    text = clipboard.text()
+    
+    if not text or not text.strip():
+        self._overlay.show_response("No text in clipboard")
+        return
+    
+    # Show what we're sending (like transcript display)
+    self._overlay.clear_and_show()
+    self._overlay.show_transcript(f"[Clipboard] {text[:100]}..." if len(text) > 100 else f"[Clipboard] {text}")
+    self._overlay.start_streaming_response()
+    
+    # Store for F10 retry
+    self._last_transcript = text
+    
+    # Get session history if persistent mode
+    messages = (
+        self._session_manager.get_messages()
+        if self._session_manager.persistent_mode
+        else None
+    )
+    
+    # Send through same flow as audio
+    self._is_responding = True
+    asyncio.run_coroutine_threadsafe(
+        self._stream_and_track_response(text, messages),
+        self._loop
+    )
+```
+
+5. **Update cheatsheet** in `app/overlay.py` - find the cheatsheet label text and add F8:
+Change from: `"F9 Record | F10 Retry | Esc Cancel | [C] Copy"` (or similar)
+To: `"F8 Text | F9 Record | F10 Retry | Esc Cancel"`
 
 ### Validation
-Run the app, get a response in overlay, click copy button [C], paste in notepad - should work.
+1. Copy some text to clipboard
+2. Press F8
+3. Should show "[Clipboard] {text}" then stream response
+4. Press F9 for follow-up question - should have context from F8 input
+5. F10 should retry the clipboard text
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.
