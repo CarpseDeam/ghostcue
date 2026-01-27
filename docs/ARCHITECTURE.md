@@ -40,9 +40,14 @@ To improve reliability during live sessions, the application implements several 
 
 The application is specifically tuned for verbal interview scenarios where responses must be spoken aloud by the user:
 
-- **Verbal Optimization**: Prompts are engineered to exclude code blocks and complex markdown, focusing on conversational explanations that are easy to recite.
+- **Verbal Optimization**: Prompts are engineered to exclude code blocks and complex markdown, focusing on conversational explanations (75-100 words) that are easy to recite.
 - **First-Person Delivery**: Responses are generated in the first person ("I built...", "In my experience...") to allow the user to mirror the AI's output directly.
-- **Conciseness**: AI behavior is constrained to ~30 seconds of speaking time (~75-100 words) per response to maintain a natural interview flow.
+- **Type-Aware Responses**: The system differentiates between question types to provide optimized answers:
+    - **Technical Concepts**: Direct explanations without forced resume connections.
+    - **Behavioral**: Automatic STAR format (Situation, Task, Action, Result) using specific resume details.
+    - **System Design**: Structured walkthroughs (requirements → components → trade-offs).
+    - **Experience Checks**: Honest evaluation of skillsets with bridging to related technologies if needed.
+- **Logic Placement**: Prompt logic is primarily maintained in `context.txt` for easier iteration, with `app/tray.py` providing the core verbal constraints.
 
 ## User Interface & Usability
 

@@ -15,6 +15,7 @@
 - `main.py` - Application entry point and tray initialization
 - `config.py` - Configuration management using environment variables
 - `contracts.py` - Data classes and shared protocols
+- `context.txt` - Interview persona, resume data, and response logic
 - `requirements.txt` - Project dependencies
 
 ## Module Details
