@@ -111,7 +111,10 @@ class GeminiProvider(BaseProvider):
 
         try:
             contents = self._convert_messages_to_contents(transcript, messages)
-            config = types.GenerateContentConfig(system_instruction=system_prompt)
+            config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                max_output_tokens=2048,
+            )
 
             full_response = ""
             async for chunk in await self._client.aio.models.generate_content_stream(

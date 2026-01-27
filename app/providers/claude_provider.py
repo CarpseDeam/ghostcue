@@ -19,7 +19,7 @@ class ClaudeConfig:
     """Configuration for Claude API calls."""
 
     model: str = "claude-sonnet-4-5-20250929"
-    max_tokens: int = 768
+    max_tokens: int = 2048
     temperature: float = 0.7
 
 

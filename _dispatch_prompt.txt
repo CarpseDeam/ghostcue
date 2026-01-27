@@ -1,213 +1,71 @@
-## Feature: Queue Multiple Snips Before Sending
+[HOTFIX] Fix session persistence and response token limits for multi-turn interviews
 
-### Overview
-Allow user to snip multiple screenshots that get queued. When Solve/Analyze is clicked, OCR all images, concatenate text, send as one prompt.
+## Problem
+- SessionManager defaults to persistent_mode=False, breaking multi-turn conversations
+- Claude provider max_tokens=768 is way too short for system design discussions
+- Gemini provider has no max_tokens configured at all
 
-### File: `app/tray.py`
+## Changes Required
 
-### Changes
-
-#### 1. Replace `_pending_payload` with queue
-
-In `TrayApp.__init__`, change:
+### 1. app/session_manager.py
+Change the default value in `__init__`:
 ```python
-self._pending_payload: Optional[ClipboardPayload] = None
-```
-to:
-```python
-self._pending_payloads: list[ClipboardPayload] = []
+self._persistent_mode: bool = True  # Was False
 ```
 
-#### 2. Update `_on_clipboard_signal` to append
-
+### 2. app/providers/claude_provider.py  
+In ClaudeConfig dataclass, bump max_tokens:
 ```python
-def _on_clipboard_signal(self, payload: ClipboardPayload) -> None:
-    self._pending_payloads.append(payload)
-    count = len(self._pending_payloads)
-    self._toolbar.set_clipboard_ready(True)
-    self._toolbar.set_queue_count(count)  # New method
-    # Enable git only if latest is image
-    self._toolbar.set_image_ready(payload.payload_type == PayloadType.IMAGE)
-    self._toolbar.set_processing(False)
+@dataclass(frozen=True)
+class ClaudeConfig:
+    """Configuration for Claude API calls."""
+    model: str = "claude-sonnet-4-5-20250929"
+    max_tokens: int = 2048  # Was 768
+    temperature: float = 0.7
 ```
 
-#### 3. Add `set_queue_count` to FloatingToolbar
-
+### 3. app/providers/gemini_provider.py
+Add max_tokens to the generate_content_config. In stream_response method, update the config creation:
 ```python
-def set_queue_count(self, count: int) -> None:
-    """Update button labels to show queue count."""
-    if count > 1:
-        self._solve_btn.setText(f"S({count})")
-        self._explain_btn.setText(f"A({count})")
-    else:
-        self._solve_btn.setText("S")
-        self._explain_btn.setText("A")
+config = types.GenerateContentConfig(
+    system_instruction=system_prompt,
+    max_output_tokens=2048,
+)
 ```
 
-#### 4. Rewrite `_on_solve_click` to process queue
+## Verification
+- Session should persist across F9 audio inputs, F8 text inputs, and screenshot analysis
+- Responses should be able to handle longer system design explanations without truncation
 
-```python
-def _on_solve_click(self) -> None:
-    if not self._pending_payloads:
-        return
-    self._toolbar.set_processing(True)
-    self._overlay.clear_and_show()
+## Code Standards
 
-    # OCR all images, collect text
-    all_text_parts = []
-    from app.ocr import WindowsOCR
-    ocr = WindowsOCR()
-    
-    for i, payload in enumerate(self._pending_payloads):
-        if payload.payload_type == PayloadType.IMAGE:
-            ocr_result = ocr.extract_text(payload.content)
-            if ocr_result.success and ocr_result.text:
-                all_text_parts.append(f"[Page {i+1}]\n{ocr_result.text}")
-            else:
-                all_text_parts.append(f"[Page {i+1}]\n(OCR failed)")
-        else:
-            all_text_parts.append(f"[Page {i+1}]\n{payload.content}")
-    
-    text = "\n\n".join(all_text_parts)
-    
-    if not text.strip():
-        self._overlay.show_error("No text extracted from any image")
-        self._toolbar.set_processing(False)
-        return
+Write code that looks inevitable. Follow these constraints:
 
-    # Clear queue after processing
-    self._pending_payloads.clear()
-    self._toolbar.set_queue_count(0)
-    self._toolbar.set_clipboard_ready(False)
+**Restraint**
+- Solve it in one file if possible
+- No abstractions until the third time you need them
+- No classes if functions will do
+- No inheritance - use composition
 
-    instruction = """Solve this problem. Output ONLY the solution code.
-CODE RULES:
-- Use markdown code blocks with language tags
-- Add brief inline comments on non-obvious lines only
-- Include time/space complexity as a comment at the end
-- Prefer readability over cleverness"""
+**Functions**
+- Max 25 lines, aim for 15
+- One level of nesting max
+- Name describes exactly what it does: `extract_billable_hours()` not `process_data()`
+- Input → transform → output. No side effects unless that's the point.
 
-    prompt = f"{instruction}\n\nProblem:\n{text}"
+**Files**
+- Max 200 lines for new files
+- One clear responsibility
+- If you're adding a second "system" to a file, stop and split
 
-    display = f"[Solve] {len(all_text_parts)} page(s)"
-    self._overlay.show_transcript(display)
-    self._overlay.start_streaming_response()
-    self._last_transcript = prompt
+**No Ceremony**
+- No AbstractFactory, no IServiceProvider, no Manager classes
+- No code "just in case" - solve the actual problem
+- Delete commented-out code, don't keep it
 
-    messages = self._session_manager.get_messages() if self._session_manager.persistent_mode else None
-    self._is_responding = True
-    asyncio.run_coroutine_threadsafe(
-        self._stream_and_track_response(prompt, messages),
-        self._loop
-    )
-```
+**Data**
+- Use dataclasses or plain dicts, not classes with only __init__ and getters
+- Data flows obviously - reader should predict what happens next
+- No global state
 
-#### 5. Rewrite `_on_explain_click` similarly
-
-Same pattern - loop through `_pending_payloads`, OCR all, concatenate, clear queue after sending.
-
-```python
-def _on_explain_click(self) -> None:
-    if not self._pending_payloads:
-        return
-    self._toolbar.set_processing(True)
-    self._overlay.clear_and_show()
-
-    # OCR all images, collect text
-    all_text_parts = []
-    from app.ocr import WindowsOCR
-    ocr = WindowsOCR()
-    
-    for i, payload in enumerate(self._pending_payloads):
-        if payload.payload_type == PayloadType.IMAGE:
-            ocr_result = ocr.extract_text(payload.content)
-            if ocr_result.success and ocr_result.text:
-                all_text_parts.append(f"[Page {i+1}]\n{ocr_result.text}")
-            else:
-                all_text_parts.append(f"[Page {i+1}]\n(OCR failed)")
-        else:
-            all_text_parts.append(f"[Page {i+1}]\n{payload.content}")
-    
-    text = "\n\n".join(all_text_parts)
-    
-    if not text.strip():
-        self._overlay.show_error("No text extracted from any image")
-        self._toolbar.set_processing(False)
-        return
-
-    # Clear queue after processing
-    self._pending_payloads.clear()
-    self._toolbar.set_queue_count(0)
-    self._toolbar.set_clipboard_ready(False)
-
-    instruction = """You are ME in a technical interview for a Python backend/platform role. Use my resume context above. Speak as if YOU lived these experiences.
-
-CRITICAL: THIS IS A VERBAL INTERVIEW - I will be SPEAKING your response out loud.
-- NO CODE BLOCKS. Never. I cannot recite code verbally.
-- Explain concepts conversationally, like you're talking to the interviewer
-- A one-liner pseudocode reference is okay
-- Keep responses under 30 seconds of speaking time (~75-100 words)
-
-RESPONSE RULES:
-- First-person ONLY. Say "I built..." not "You could say..."
-- Lead with the answer. No preamble.
-- Be concise. Interviewers can ask follow-ups.
-
-FOR BEHAVIORAL: Use STAR format, pull from resume.
-FOR SYSTEM DESIGN: Components, data flow, trade-offs in plain English.
-FOR TECHNICAL: Clear explanation, bridge to experience.
-
-TONE: Confident peer."""
-
-    prompt = f"{instruction}\n\nQuestion:\n{text}"
-
-    display = f"[Analyze] {len(all_text_parts)} page(s)"
-    self._overlay.show_transcript(display)
-    self._overlay.start_streaming_response()
-    self._last_transcript = prompt
-
-    messages = self._session_manager.get_messages() if self._session_manager.persistent_mode else None
-    self._is_responding = True
-    asyncio.run_coroutine_threadsafe(
-        self._stream_and_track_response(prompt, messages),
-        self._loop
-    )
-```
-
-#### 6. Update `_on_git_click` to use last payload only
-
-```python
-def _on_git_click(self) -> None:
-    if not self._pending_payloads:
-        return
-    # Git uses only the most recent image
-    payload = self._pending_payloads[-1]
-    if payload.payload_type != PayloadType.IMAGE:
-        return
-    # ... rest unchanged
-```
-
-#### 7. Update `_on_reset_click` to clear queue too
-
-```python
-def _on_reset_click(self) -> None:
-    """Clear session history and pending queue."""
-    self._session_manager.clear()
-    self._pending_payloads.clear()
-    self._toolbar.set_queue_count(0)
-    self._toolbar.set_clipboard_ready(False)
-    self._overlay.show_response("Session cleared")
-```
-
-#### 8. Fix any other references to `_pending_payload`
-
-Search for `_pending_payload` and update to use `_pending_payloads[-1]` or check `len(self._pending_payloads) > 0` as appropriate.
-
-### Validation
-1. Snip image 1 → buttons show "S" and "A"
-2. Snip image 2 → buttons show "S(2)" and "A(2)"  
-3. Click Analyze → OCRs both, sends combined, buttons reset to "S" and "A"
-4. Verify response includes context from both pages
-5. Click Reset → queue clears
-
-Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.
+The best code is code you delete. Every line is a liability.

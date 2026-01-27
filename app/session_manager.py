@@ -20,7 +20,7 @@ class SessionManager:
     def __init__(self) -> None:
         """Initialize session manager with empty state."""
         self._messages: list[dict[str, str]] = []
-        self._persistent_mode: bool = False
+        self._persistent_mode: bool = True
 
     @property
     def persistent_mode(self) -> bool:
