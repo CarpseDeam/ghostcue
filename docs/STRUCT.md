@@ -7,6 +7,7 @@
 - `app/` - Core application logic and providers
   - `providers/` - LLM backend implementations (Claude, Gemini)
 - `docs/` - Documentation files
+- `src/` - Utility scripts and hotfixes
 - `tests/` - Unit and integration tests
 
 ## Key Files
@@ -39,6 +40,9 @@
 - `base.py`: Abstract base class for AI providers
 - `claude_provider.py`: Async implementation for Anthropic Claude (AsyncAnthropic)
 - `gemini_provider.py`: Implementation for Google Gemini
+
+### `src/`
+- `fixencodingandclipboard.py`: Hotfix for ASCII encoding and clipboard functionality
 
 ## Entry Points
 

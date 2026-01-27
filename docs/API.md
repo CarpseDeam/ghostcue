@@ -31,7 +31,7 @@ The transparent overlay used to display transcriptions and AI responses.
 
 **Features:**
 - **Markdown Rendering**: Supports code blocks and inline formatting.
-- **Cheat Sheet**: Displays a persistent footer with hotkey reminders (F9, F10, Esc, Copy).
+- **Cheat Sheet**: Displays a persistent footer with hotkey reminders: `F9 Record | F10 Retry | Esc Cancel | [C] Copy`.
 
 **Methods:**
 - `show_transcript(text: str) -> None`: Displays the captured transcript text above the response area.
@@ -42,7 +42,7 @@ The transparent overlay used to display transcriptions and AI responses.
 ## Hotkeys
 
 ### Global Hotkeys
-- **F9**: Start/Stop recording (Toggle).
+- **F9**: Start/Stop recording (Toggle) - **Manual control only** (silence detection disabled).
 - **F10**: Retry last transcript.
 - **Escape**: Cancel current response streaming.
 
@@ -50,5 +50,6 @@ The transparent overlay used to display transcriptions and AI responses.
 - **F9**: Start/Stop recording.
 - **F10**: Retry last transcript.
 - **Escape**: Cancel response or hide overlay.
+- **[C] Button**: Copy response to clipboard.
 - **Left Mouse Drag**: Move overlay.
 - **Bottom-Right Corner**: Resize overlay.
