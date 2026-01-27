@@ -1,76 +1,85 @@
-[FEATURE] Rewrite interview prompt for clearer, smarter responses
+[FEATURE] Write a polished README.md for GhostCue
 
-## Problem
-Current prompt forces resume connections on every answer, causing fabricated details and forced bridges. User needs clear, easy-to-process verbal answers that only reference experience when genuinely relevant.
+## Context
+This is a real-time conversational AI assistant with audio capture and context persistence. Rename framing from "widget-helper" to "GhostCue". Do NOT frame it as an interview cheating tool - focus on legitimate use cases.
 
-## Files to Change
+## Create README.md in project root
 
-### 1. context.txt - Replace the header instruction (first paragraph before the ---)
+Structure:
 
-Replace:
+```markdown
+# GhostCue
+
+**Real-time conversational AI assistant with audio capture and context persistence.**
+
+[One-liner: Listens to system audio, transcribes in real-time, provides AI-powered responses in a minimal stealth overlay]
+
+## What It Does
+
+- Captures system audio (WASAPI loopback) and transcribes speech in real-time via Deepgram
+- Sends transcripts to AI (Claude or Gemini) along with your custom context
+- Displays responses in a minimal, always-on-top overlay designed to stay out of the way
+- Maintains conversation history for natural multi-turn exchanges
+- Supports screenshot OCR for visual content
+
+## Use Cases
+
+- **Accessibility** - Processing aid for neurodivergent individuals during live conversations
+- **Language support** - Real-time assistance for ESL speakers
+- **Learning & tutoring** - Ask questions about what's being explained as you hear it
+- **Technical support** - Instant reference to complex knowledge bases during calls
+- **Presentations** - Live Q&A assistance with your prepared materials
+- **Meeting support** - Context-aware notes and responses
+
+## Features
+
+- **F9** - Toggle audio recording
+- **F8** - Send clipboard text
+- **F10** - Retry last response
+- **Esc** - Cancel
+- **Screenshot queue** - Capture multiple images, send together with OCR
+- **Session persistence** - Full conversation history maintained
+- **Multiple AI providers** - Claude, Gemini Pro, Gemini Flash (switchable via tray)
+
+## Requirements
+
+- Windows 10/11
+- Python 3.11+
+- API keys for:
+  - Deepgram (speech-to-text)
+  - Anthropic (Claude) and/or Google (Gemini)
+
+## Installation
+
+[Standard: clone, venv, pip install -r requirements.txt, .env setup]
+
+## Configuration
+
+- `context.txt` - Your custom context/knowledge base the AI references
+- `config.py` - Overlay appearance, timeouts, etc.
+
+## Usage
+
+1. Add your context/reference material to `context.txt`
+2. Run `python main.py`
+3. App runs in system tray
+4. Press F9 to start listening, F9 again to get response
+5. Response appears in overlay
+
+## Tech Stack
+
+- Python, PyQt6, asyncio
+- WASAPI loopback audio capture
+- Deepgram streaming transcription
+- Anthropic/Google GenAI APIs
+- Windows OCR
+
+## License
+
+MIT
 ```
-You are answering interview questions as Kori Mead. Use this resume to inform your answers. Speak in first person as if you ARE Kori. Be concise and confident.
-```
 
-With:
-```
-You are Kori Mead in a technical interview. First person only. Confident, direct, no filler.
-
-RESPONSE FORMAT - I will speak these aloud:
-- Lead with the answer immediately
-- No "Great question!" or preamble
-- 75-100 words max (~30 seconds speaking)
-- No code blocks - explain concepts conversationally
-
-QUESTION TYPE HANDLING:
-
-TECHNICAL CONCEPTS (e.g., "What is a B-tree?", "Explain TCP handshake"):
-→ Just explain it clearly and directly
-→ Do NOT force resume connections
-→ Only mention experience if it genuinely adds something
-
-BEHAVIORAL (e.g., "Tell me about a time..."):
-→ Use STAR format: Situation → Task → Action → Result
-→ Pull from resume - Mercor, EdgeAI, Snowball, scraping systems
-→ Include specifics: numbers, technologies, outcomes
-
-SYSTEM DESIGN (e.g., "Design a URL shortener"):
-→ Walk through: requirements → components → data flow → trade-offs
-→ Reference the SYSTEMS DESIGN REFERENCE section below
-→ Mention my experience where it naturally supports choices
-
-"DO YOU HAVE EXPERIENCE WITH X?":
-→ If yes: brief example from resume
-→ If no: "I haven't used X directly, but I understand [concept]. In my work with [related thing], I applied similar principles."
-→ Never fabricate experience
-
-FOLLOW-UP QUESTIONS:
-→ Build on previous context
-→ Go deeper, don't repeat
-→ Stay concise
-```
-
-### 2. app/tray.py - Update _build_system_prompt() base_instruction
-
-The base_instruction variable in `_build_system_prompt()` method needs to be simplified since the main logic is now in context.txt. Replace the entire base_instruction string with:
-
-```python
-base_instruction = """CRITICAL RULES:
-- This is verbal - I speak your response aloud
-- No code blocks ever
-- First person only ("I built..." not "You could say...")
-- 75-100 words max
-- Lead with the answer, no preamble
-- Be direct and confident"""
-```
-
-This keeps tray.py lightweight and puts all the smart logic in context.txt where it's easier to iterate on.
-
-## Expected Behavior
-- "What is a hash table?" → Clean explanation, no forced resume mention
-- "Tell me about a time you debugged a production issue" → STAR format with Mercor/EdgeAI details
-- "Design a rate limiter" → Components + trade-offs, mentions experience where relevant
-- "Do you have experience with Kubernetes?" → Honest answer, bridges to Docker/AWS if needed
+Keep it clean, professional, honest about functionality without being explicit about any particular use case. Let users figure out how they want to use it.
 
 ## Code Standards
 
