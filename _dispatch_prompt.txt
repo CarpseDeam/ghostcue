@@ -1,41 +1,76 @@
-[HOTFIX] Fix session persistence and response token limits for multi-turn interviews
+[FEATURE] Rewrite interview prompt for clearer, smarter responses
 
 ## Problem
-- SessionManager defaults to persistent_mode=False, breaking multi-turn conversations
-- Claude provider max_tokens=768 is way too short for system design discussions
-- Gemini provider has no max_tokens configured at all
+Current prompt forces resume connections on every answer, causing fabricated details and forced bridges. User needs clear, easy-to-process verbal answers that only reference experience when genuinely relevant.
 
-## Changes Required
+## Files to Change
 
-### 1. app/session_manager.py
-Change the default value in `__init__`:
-```python
-self._persistent_mode: bool = True  # Was False
+### 1. context.txt - Replace the header instruction (first paragraph before the ---)
+
+Replace:
+```
+You are answering interview questions as Kori Mead. Use this resume to inform your answers. Speak in first person as if you ARE Kori. Be concise and confident.
 ```
 
-### 2. app/providers/claude_provider.py  
-In ClaudeConfig dataclass, bump max_tokens:
-```python
-@dataclass(frozen=True)
-class ClaudeConfig:
-    """Configuration for Claude API calls."""
-    model: str = "claude-sonnet-4-5-20250929"
-    max_tokens: int = 2048  # Was 768
-    temperature: float = 0.7
+With:
+```
+You are Kori Mead in a technical interview. First person only. Confident, direct, no filler.
+
+RESPONSE FORMAT - I will speak these aloud:
+- Lead with the answer immediately
+- No "Great question!" or preamble
+- 75-100 words max (~30 seconds speaking)
+- No code blocks - explain concepts conversationally
+
+QUESTION TYPE HANDLING:
+
+TECHNICAL CONCEPTS (e.g., "What is a B-tree?", "Explain TCP handshake"):
+→ Just explain it clearly and directly
+→ Do NOT force resume connections
+→ Only mention experience if it genuinely adds something
+
+BEHAVIORAL (e.g., "Tell me about a time..."):
+→ Use STAR format: Situation → Task → Action → Result
+→ Pull from resume - Mercor, EdgeAI, Snowball, scraping systems
+→ Include specifics: numbers, technologies, outcomes
+
+SYSTEM DESIGN (e.g., "Design a URL shortener"):
+→ Walk through: requirements → components → data flow → trade-offs
+→ Reference the SYSTEMS DESIGN REFERENCE section below
+→ Mention my experience where it naturally supports choices
+
+"DO YOU HAVE EXPERIENCE WITH X?":
+→ If yes: brief example from resume
+→ If no: "I haven't used X directly, but I understand [concept]. In my work with [related thing], I applied similar principles."
+→ Never fabricate experience
+
+FOLLOW-UP QUESTIONS:
+→ Build on previous context
+→ Go deeper, don't repeat
+→ Stay concise
 ```
 
-### 3. app/providers/gemini_provider.py
-Add max_tokens to the generate_content_config. In stream_response method, update the config creation:
+### 2. app/tray.py - Update _build_system_prompt() base_instruction
+
+The base_instruction variable in `_build_system_prompt()` method needs to be simplified since the main logic is now in context.txt. Replace the entire base_instruction string with:
+
 ```python
-config = types.GenerateContentConfig(
-    system_instruction=system_prompt,
-    max_output_tokens=2048,
-)
+base_instruction = """CRITICAL RULES:
+- This is verbal - I speak your response aloud
+- No code blocks ever
+- First person only ("I built..." not "You could say...")
+- 75-100 words max
+- Lead with the answer, no preamble
+- Be direct and confident"""
 ```
 
-## Verification
-- Session should persist across F9 audio inputs, F8 text inputs, and screenshot analysis
-- Responses should be able to handle longer system design explanations without truncation
+This keeps tray.py lightweight and puts all the smart logic in context.txt where it's easier to iterate on.
+
+## Expected Behavior
+- "What is a hash table?" → Clean explanation, no forced resume mention
+- "Tell me about a time you debugged a production issue" → STAR format with Mercor/EdgeAI details
+- "Design a rate limiter" → Components + trade-offs, mentions experience where relevant
+- "Do you have experience with Kubernetes?" → Honest answer, bridges to Docker/AWS if needed
 
 ## Code Standards
 
