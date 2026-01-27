@@ -2,6 +2,7 @@
 
 All notable changes to this project.
 
+- 2026-01-27: feat: rename project to GhostCue and pivot framing to general-purpose conversational AI assistant
 - 2026-01-27: feat: rewrite interview prompt for smarter, type-aware responses (Technical, Behavioral, System Design)
 - 2026-01-27: fix: enable session persistence by default and increase token limits to 2048 for Claude and Gemini
 - 2026-01-26: feat: implement multi-snip queueing for batch OCR and analysis

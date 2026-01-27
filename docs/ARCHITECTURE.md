@@ -24,7 +24,7 @@ All input methods—Solve, Analyze, Audio (F9), and Text (F8)—are routed throu
 - **OCR Integration**: Image-based inputs (screenshots) automatically undergo OCR before being processed by the unified flow.
 - **Unified Retries**: The F10 hotkey retries the last input regardless of the source (audio or text).
 
-## Interview Recovery Features
+## Assistant Recovery Features
 
 To improve reliability during live sessions, the application implements several recovery mechanisms:
 
@@ -36,17 +36,17 @@ To improve reliability during live sessions, the application implements several 
 - **Manual Cancellation (Escape)**: Ongoing response generation can be cancelled immediately, returning the UI to a ready state.
 - **Visual Context**: The overlay displays the "heard" transcript or source text above the AI response, providing clear context for the generated output.
 
-## Interview Mode Persona
+## Conversational Assistant Persona
 
-The application is specifically tuned for verbal interview scenarios where responses must be spoken aloud by the user:
+The application is tuned for real-time conversational assistance where responses are intended to be clear, direct, and helpful:
 
-- **Verbal Optimization**: Prompts are engineered to exclude code blocks and complex markdown, focusing on conversational explanations (75-100 words) that are easy to recite.
-- **First-Person Delivery**: Responses are generated in the first person ("I built...", "In my experience...") to allow the user to mirror the AI's output directly.
-- **Type-Aware Responses**: The system differentiates between question types to provide optimized answers:
-    - **Technical Concepts**: Direct explanations without forced resume connections.
-    - **Behavioral**: Automatic STAR format (Situation, Task, Action, Result) using specific resume details.
-    - **System Design**: Structured walkthroughs (requirements → components → trade-offs).
-    - **Experience Checks**: Honest evaluation of skillsets with bridging to related technologies if needed.
+- **Verbal Optimization**: Prompts are engineered to focus on conversational explanations (75-100 words) that are easy to process and understand when heard.
+- **First-Person Delivery**: Responses are generated in the first person ("I built...", "In my experience...") to provide natural-sounding assistance.
+- **Context-Aware Responses**: The system differentiates between input types to provide optimized answers:
+    - **Technical Concepts**: Direct explanations without unnecessary filler.
+    - **Behavioral/Contextual**: Uses structured formats (like STAR) when referencing personal experience or history from the knowledge base.
+    - **System Design/Problem Solving**: Structured walkthroughs (requirements → components → trade-offs).
+    - **Knowledge Retrieval**: Honest evaluation of available information with bridging to related concepts if needed.
 - **Logic Placement**: Prompt logic is primarily maintained in `context.txt` for easier iteration, with `app/tray.py` providing the core verbal constraints.
 
 ## User Interface & Usability
