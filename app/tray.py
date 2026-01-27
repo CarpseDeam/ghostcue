@@ -416,7 +416,7 @@ class TrayApp:
         self._loopback.interim_interviewer.connect(self._on_interim_update)
         self._loopback.final_interviewer.connect(self._on_interim_update)
         self._loopback.error_occurred.connect(self._on_streaming_error)
-        self._loopback.silence_detected.connect(self._on_silence_detected)
+        # silence_detected disabled - full manual control with F9
 
     def _disconnect_loopback_signals(self) -> None:
         try:

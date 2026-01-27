@@ -136,8 +136,8 @@ class StealthOverlay(QWidget):
             }
         """
 
-        self._copy_btn = QPushButton("📋")
-        self._copy_btn.setFixedSize(20, 20)
+        self._copy_btn = QPushButton("[C]")
+        self._copy_btn.setFixedSize(24, 20)
         self._copy_btn.setStyleSheet(header_btn_style)
         self._copy_btn.setToolTip("Copy to clipboard")
         self._copy_btn.clicked.connect(self._copy_to_clipboard)
@@ -224,7 +224,7 @@ class StealthOverlay(QWidget):
 
         container_layout.addWidget(self._text_edit)
 
-        self._cheatsheet_label = QLabel("Esc: Close  •  Drag: Move  •  Corner: Resize")
+        self._cheatsheet_label = QLabel("F9 Record  |  F10 Retry  |  Esc Cancel  |  [C] Copy")
         self._cheatsheet_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._cheatsheet_label.setStyleSheet(f"""
             QLabel {{

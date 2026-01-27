@@ -22,29 +22,24 @@ Write the implementation now with what you know.
 
 ## THE SPECIFICATION
 
-# Specification: OverlayCheatSheet
+# Specification: FixEncodingAndClipboard
 Tier: HOTFIX
 
 ## Description
-Add a subtle hotkey cheat sheet footer to the overlay.
+Two critical bugs to fix:
 
 ## Must Do
-- Add `_cheatsheet_label` as a QLabel with hotkey hints
-- Style it muted (THEME_TEXT_MUTED) and smaller font (FONT_SIZE_PT - 2)
-- Center align the text
-- Add to container_layout after text_edit
+- Replace all unicode characters in context.txt with ASCII
+- Ensure clipboard copy works from overlay
+- Test that copy button actually copies text
 
 ## Must Not Do
-- Make it interactive/clickable
-- Add toggle/hide functionality
-- Change any existing overlay behavior
-- Modify the copy button functionality
+- Change any other functionality
+- Modify hotkey behavior
+- Touch the silence detection code
 
 ## Validation
 - Tests: pytest tests/ -v
-
-## Target Path
-- `app/overlay.py`
 
 ## YOUR TASK
 
@@ -54,7 +49,7 @@ Add a subtle hotkey cheat sheet footer to the overlay.
 
 ### Step 1: Implement the Interface
 
-Implementation location: `- `app/overlay.py``
+Implementation location: `src/fixencodingandclipboard.py`
 
 Implementation Rules:
 1. Follow interface signatures EXACTLY as specified
@@ -65,7 +60,7 @@ Implementation Rules:
 
 ### Step 2: Write Tests
 
-Test file location: `tests/test_overlaycheatsheet.py`
+Test file location: `tests/test_fixencodingandclipboard.py`
 
 After implementing, write tests that verify contract and behavior:
 
