@@ -20,7 +20,6 @@
 ## Module Details
 
 ### `app/`
-- `analyzer.py`: Text analysis logic
 - `audio_worker.py`: Background worker for audio processing
 - `claude_client.py`: Streaming client for Claude
 - `clipboard.py`: Clipboard monitoring utility

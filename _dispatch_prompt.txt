@@ -1,47 +1,99 @@
-## Unify All Inputs Through Session Flow
+## Feature: Queue Multiple Snips Before Sending
 
 ### Overview
-Route ALL input methods (Solve, Analyze, Audio, Text) through the same `_stream_and_track_response` flow with session history. Add reset button to clear session.
+Allow user to snip multiple screenshots that get queued. When Solve/Analyze is clicked, OCR all images, concatenate text, send as one prompt.
 
 ### File: `app/tray.py`
 
 ### Changes
 
-#### 1. Rewrite `_on_solve_click` to use session flow:
+#### 1. Replace `_pending_payload` with queue
+
+In `TrayApp.__init__`, change:
+```python
+self._pending_payload: Optional[ClipboardPayload] = None
+```
+to:
+```python
+self._pending_payloads: list[ClipboardPayload] = []
+```
+
+#### 2. Update `_on_clipboard_signal` to append
+
+```python
+def _on_clipboard_signal(self, payload: ClipboardPayload) -> None:
+    self._pending_payloads.append(payload)
+    count = len(self._pending_payloads)
+    self._toolbar.set_clipboard_ready(True)
+    self._toolbar.set_queue_count(count)  # New method
+    # Enable git only if latest is image
+    self._toolbar.set_image_ready(payload.payload_type == PayloadType.IMAGE)
+    self._toolbar.set_processing(False)
+```
+
+#### 3. Add `set_queue_count` to FloatingToolbar
+
+```python
+def set_queue_count(self, count: int) -> None:
+    """Update button labels to show queue count."""
+    if count > 1:
+        self._solve_btn.setText(f"S({count})")
+        self._explain_btn.setText(f"A({count})")
+    else:
+        self._solve_btn.setText("S")
+        self._explain_btn.setText("A")
+```
+
+#### 4. Rewrite `_on_solve_click` to process queue
+
 ```python
 def _on_solve_click(self) -> None:
-    if not self._pending_payload:
+    if not self._pending_payloads:
         return
     self._toolbar.set_processing(True)
     self._overlay.clear_and_show()
+
+    # OCR all images, collect text
+    all_text_parts = []
+    from app.ocr import WindowsOCR
+    ocr = WindowsOCR()
     
-    # OCR if image
-    if self._pending_payload.payload_type == PayloadType.IMAGE:
-        from app.ocr import WindowsOCR
-        ocr = WindowsOCR()
-        ocr_result = ocr.extract_text(self._pending_payload.content)
-        if not ocr_result.success or not ocr_result.text:
-            self._overlay.show_error("OCR failed or no text detected")
-            self._toolbar.set_processing(False)
-            return
-        text = ocr_result.text
-    else:
-        text = self._pending_payload.content
+    for i, payload in enumerate(self._pending_payloads):
+        if payload.payload_type == PayloadType.IMAGE:
+            ocr_result = ocr.extract_text(payload.content)
+            if ocr_result.success and ocr_result.text:
+                all_text_parts.append(f"[Page {i+1}]\n{ocr_result.text}")
+            else:
+                all_text_parts.append(f"[Page {i+1}]\n(OCR failed)")
+        else:
+            all_text_parts.append(f"[Page {i+1}]\n{payload.content}")
     
-    # Prepend solve instruction
+    text = "\n\n".join(all_text_parts)
+    
+    if not text.strip():
+        self._overlay.show_error("No text extracted from any image")
+        self._toolbar.set_processing(False)
+        return
+
+    # Clear queue after processing
+    self._pending_payloads.clear()
+    self._toolbar.set_queue_count(0)
+    self._toolbar.set_clipboard_ready(False)
+
     instruction = """Solve this problem. Output ONLY the solution code.
 CODE RULES:
 - Use markdown code blocks with language tags
 - Add brief inline comments on non-obvious lines only
 - Include time/space complexity as a comment at the end
 - Prefer readability over cleverness"""
-    
+
     prompt = f"{instruction}\n\nProblem:\n{text}"
-    
-    self._overlay.show_transcript(f"[Solve] {text[:80]}..." if len(text) > 80 else f"[Solve] {text}")
+
+    display = f"[Solve] {len(all_text_parts)} page(s)"
+    self._overlay.show_transcript(display)
     self._overlay.start_streaming_response()
     self._last_transcript = prompt
-    
+
     messages = self._session_manager.get_messages() if self._session_manager.persistent_mode else None
     self._is_responding = True
     asyncio.run_coroutine_threadsafe(
@@ -50,28 +102,44 @@ CODE RULES:
     )
 ```
 
-#### 2. Rewrite `_on_explain_click` (Analyze) similarly:
+#### 5. Rewrite `_on_explain_click` similarly
+
+Same pattern - loop through `_pending_payloads`, OCR all, concatenate, clear queue after sending.
+
 ```python
 def _on_explain_click(self) -> None:
-    if not self._pending_payload:
+    if not self._pending_payloads:
         return
     self._toolbar.set_processing(True)
     self._overlay.clear_and_show()
+
+    # OCR all images, collect text
+    all_text_parts = []
+    from app.ocr import WindowsOCR
+    ocr = WindowsOCR()
     
-    # OCR if image
-    if self._pending_payload.payload_type == PayloadType.IMAGE:
-        from app.ocr import WindowsOCR
-        ocr = WindowsOCR()
-        ocr_result = ocr.extract_text(self._pending_payload.content)
-        if not ocr_result.success or not ocr_result.text:
-            self._overlay.show_error("OCR failed or no text detected")
-            self._toolbar.set_processing(False)
-            return
-        text = ocr_result.text
-    else:
-        text = self._pending_payload.content
+    for i, payload in enumerate(self._pending_payloads):
+        if payload.payload_type == PayloadType.IMAGE:
+            ocr_result = ocr.extract_text(payload.content)
+            if ocr_result.success and ocr_result.text:
+                all_text_parts.append(f"[Page {i+1}]\n{ocr_result.text}")
+            else:
+                all_text_parts.append(f"[Page {i+1}]\n(OCR failed)")
+        else:
+            all_text_parts.append(f"[Page {i+1}]\n{payload.content}")
     
-    # Use the existing interview instruction (already updated in _on_explain_click)
+    text = "\n\n".join(all_text_parts)
+    
+    if not text.strip():
+        self._overlay.show_error("No text extracted from any image")
+        self._toolbar.set_processing(False)
+        return
+
+    # Clear queue after processing
+    self._pending_payloads.clear()
+    self._toolbar.set_queue_count(0)
+    self._toolbar.set_clipboard_ready(False)
+
     instruction = """You are ME in a technical interview for a Python backend/platform role. Use my resume context above. Speak as if YOU lived these experiences.
 
 CRITICAL: THIS IS A VERBAL INTERVIEW - I will be SPEAKING your response out loud.
@@ -92,11 +160,12 @@ FOR TECHNICAL: Clear explanation, bridge to experience.
 TONE: Confident peer."""
 
     prompt = f"{instruction}\n\nQuestion:\n{text}"
-    
-    self._overlay.show_transcript(f"[Analyze] {text[:80]}..." if len(text) > 80 else f"[Analyze] {text}")
+
+    display = f"[Analyze] {len(all_text_parts)} page(s)"
+    self._overlay.show_transcript(display)
     self._overlay.start_streaming_response()
     self._last_transcript = prompt
-    
+
     messages = self._session_manager.get_messages() if self._session_manager.persistent_mode else None
     self._is_responding = True
     asyncio.run_coroutine_threadsafe(
@@ -105,78 +174,40 @@ TONE: Confident peer."""
     )
 ```
 
-#### 3. Add reset button to FloatingToolbar
+#### 6. Update `_on_git_click` to use last payload only
 
-In `FloatingToolbar.__init__`, add parameter:
 ```python
-on_reset_click: Optional[Callable[[], None]] = None,
+def _on_git_click(self) -> None:
+    if not self._pending_payloads:
+        return
+    # Git uses only the most recent image
+    payload = self._pending_payloads[-1]
+    if payload.payload_type != PayloadType.IMAGE:
+        return
+    # ... rest unchanged
 ```
 
-Store it:
-```python
-self._on_reset_callback = on_reset_click
-```
+#### 7. Update `_on_reset_click` to clear queue too
 
-Add button after git_btn (or wherever makes sense):
-```python
-self._reset_btn = QPushButton("R")
-self._reset_btn.setFixedSize(btn_size, btn_size)
-self._reset_btn.setToolTip("Reset conversation")
-self._reset_btn.clicked.connect(self._on_reset_click)
-self._reset_btn.setStyleSheet("""
-    QPushButton {
-        background-color: #7f8c8d;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-size: 16px;
-        font-weight: bold;
-    }
-    QPushButton:hover {
-        background-color: #95a5a6;
-    }
-""")
-layout.addWidget(self._reset_btn)
-```
-
-Add handler:
 ```python
 def _on_reset_click(self) -> None:
-    if self._on_reset_callback:
-        self._on_reset_callback()
-```
-
-#### 4. In TrayApp, wire up reset
-
-In `_setup_toolbar`:
-```python
-self._toolbar = FloatingToolbar(
-    on_audio_click=self._on_audio_button_click,
-    on_solve_click=self._on_solve_click,
-    on_explain_click=self._on_explain_click,
-    on_git_click=self._on_git_click,
-    on_reset_click=self._on_reset_click,  # Add this
-    config=self._config
-)
-```
-
-Add handler in TrayApp:
-```python
-def _on_reset_click(self) -> None:
-    """Clear session history."""
+    """Clear session history and pending queue."""
     self._session_manager.clear()
+    self._pending_payloads.clear()
+    self._toolbar.set_queue_count(0)
+    self._toolbar.set_clipboard_ready(False)
     self._overlay.show_response("Session cleared")
 ```
 
-#### 5. Remove dead code
-- Remove `_process_clipboard_request` method (no longer used)
-- Can keep `Analyzer` class for now if git commit feature uses it, otherwise remove import
+#### 8. Fix any other references to `_pending_payload`
+
+Search for `_pending_payload` and update to use `_pending_payloads[-1]` or check `len(self._pending_payloads) > 0` as appropriate.
 
 ### Validation
-1. Snip a problem, click Solve - should stream with session
-2. Ask follow-up via F9 audio - should have context
-3. Click Analyze on new snip - should add to same session  
-4. Click Reset (R) - should clear, show "Session cleared"
-5. Next input should start fresh
+1. Snip image 1 → buttons show "S" and "A"
+2. Snip image 2 → buttons show "S(2)" and "A(2)"  
+3. Click Analyze → OCRs both, sends combined, buttons reset to "S" and "A"
+4. Verify response includes context from both pages
+5. Click Reset → queue clears
 
 Write clean, scalable, modular, efficient code. Follow single responsibility principle. Do not repeat yourself. Use consistent naming conventions. No unnecessary comments.

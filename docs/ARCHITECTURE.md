@@ -16,12 +16,20 @@ A robust error recovery mechanism is implemented in the streaming pipeline:
 - **Signal Reconnection**: On streaming errors, the application attempts to reconnect loopback signals to ensure subsequent requests can proceed.
 - **Graceful Failure**: Errors are caught and emitted via the `error_occurred` signal, allowing the UI to notify the user while maintaining stable application state.
 
+## Unified Input Flow
+
+All input methods—Solve, Analyze, Audio (F9), and Text (F8)—are routed through a unified `_stream_and_track_response` pipeline. This ensures:
+- **Consistent Session History**: Follow-up questions via any method maintain context from previous interactions.
+- **OCR Integration**: Image-based inputs (screenshots) automatically undergo OCR before being processed by the unified flow.
+- **Unified Retries**: The F10 hotkey retries the last input regardless of the source (audio or text).
+
 ## Interview Recovery Features
 
 To improve reliability during live sessions, the application implements several recovery mechanisms:
 
 - **Manual Control (F9)**: Automatic silence detection is disabled to give the user full control over recording starts and stops, preventing premature cut-offs.
 - **Text Input (F8)**: Users can grab text from the system clipboard and send it as a prompt, allowing for quick follow-ups on written content while maintaining session history.
+- **Session Reset (R)**: A dedicated reset button on the toolbar allows users to immediately clear session history and start fresh.
 - **Transcript Tracking**: The last captured transcript (or clipboard text) is stored to allow for immediate retries.
 - **Manual Retry (F10)**: Users can re-trigger the generation process for the last transcript if the response was interrupted or unsatisfactory.
 - **Manual Cancellation (Escape)**: Ongoing response generation can be cancelled immediately, returning the UI to a ready state.

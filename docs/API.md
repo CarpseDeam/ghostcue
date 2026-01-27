@@ -39,6 +39,18 @@ The transparent overlay used to display transcriptions and AI responses.
 - `show_response(text: str) -> None`: Displays the final response or status message.
 - `show_error(error: str) -> None`: Displays an error message in the overlay.
 
+### FloatingToolbar
+
+The draggable toolbar providing quick access to primary features.
+
+**Buttons:**
+- **Snip (\u25f2)**: Open Windows Screen Snip tool.
+- **Audio (\u25cf)**: Toggle audio recording (same as F9).
+- **Solve (S)**: Process clipboard content with "Solve" instruction.
+- **Analyze (A)**: Process clipboard content with "Interview Analyze" instruction.
+- **Git (G)**: Generate commit message from clipboard image.
+- **Reset (R)**: Clear current session history.
+
 ## Hotkeys
 
 ### Global Hotkeys

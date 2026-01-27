@@ -62,6 +62,7 @@ class FloatingToolbar(QWidget):
         self._is_recording = False
         self._clipboard_ready = False
         self._image_ready = False
+        self._queue_count = 0
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -286,10 +287,21 @@ class FloatingToolbar(QWidget):
             self._solve_btn.setText("...")
             self._explain_btn.setText("...")
         else:
-            self._solve_btn.setText("S")
-            self._explain_btn.setText("A")
+            self._update_button_labels()
         self._update_solve_style()
         self._update_explain_style()
+
+    def set_queue_count(self, count: int) -> None:
+        self._queue_count = count
+        self._update_button_labels()
+
+    def _update_button_labels(self) -> None:
+        if self._queue_count > 1:
+            self._solve_btn.setText(f"S({self._queue_count})")
+            self._explain_btn.setText(f"A({self._queue_count})")
+        else:
+            self._solve_btn.setText("S")
+            self._explain_btn.setText("A")
 
     def set_recording_state(self, is_recording: bool) -> None:
         self._is_recording = is_recording
@@ -387,7 +399,7 @@ class TrayApp:
         self._is_recording = False
         self._is_responding = False
         self._f9_pressed: bool = False
-        self._pending_payload: Optional[ClipboardPayload] = None
+        self._pending_payloads: list[ClipboardPayload] = []
         self._streaming_task: Optional[asyncio.Task] = None
         self._hotkey_listener: Optional[pynput_keyboard.Listener] = None
         self._pending_transcript: str = ""
@@ -627,28 +639,43 @@ TONE: Confident peer. No hedging like "I think maybe..." - speak with authority.
         self._signals.clipboard_changed.emit(payload)
 
     def _on_clipboard_signal(self, payload: ClipboardPayload) -> None:
-        self._pending_payload = payload
+        self._pending_payloads.append(payload)
+        count = len(self._pending_payloads)
         self._toolbar.set_clipboard_ready(True)
+        self._toolbar.set_queue_count(count)
         self._toolbar.set_image_ready(payload.payload_type == PayloadType.IMAGE)
         self._toolbar.set_processing(False)
 
     def _on_solve_click(self) -> None:
-        if not self._pending_payload:
+        if not self._pending_payloads:
             return
         self._toolbar.set_processing(True)
         self._overlay.clear_and_show()
 
-        if self._pending_payload.payload_type == PayloadType.IMAGE:
-            from app.ocr import WindowsOCR
-            ocr = WindowsOCR()
-            ocr_result = ocr.extract_text(self._pending_payload.content)
-            if not ocr_result.success or not ocr_result.text:
-                self._overlay.show_error("OCR failed or no text detected")
-                self._toolbar.set_processing(False)
-                return
-            text = ocr_result.text
-        else:
-            text = self._pending_payload.content
+        all_text_parts = []
+        from app.ocr import WindowsOCR
+        ocr = WindowsOCR()
+
+        for i, payload in enumerate(self._pending_payloads):
+            if payload.payload_type == PayloadType.IMAGE:
+                ocr_result = ocr.extract_text(payload.content)
+                if ocr_result.success and ocr_result.text:
+                    all_text_parts.append(f"[Page {i+1}]\n{ocr_result.text}")
+                else:
+                    all_text_parts.append(f"[Page {i+1}]\n(OCR failed)")
+            else:
+                all_text_parts.append(f"[Page {i+1}]\n{payload.content}")
+
+        text = "\n\n".join(all_text_parts)
+
+        if not text.strip():
+            self._overlay.show_error("No text extracted from any image")
+            self._toolbar.set_processing(False)
+            return
+
+        self._pending_payloads.clear()
+        self._toolbar.set_queue_count(0)
+        self._toolbar.set_clipboard_ready(False)
 
         instruction = """Solve this problem. Output ONLY the solution code.
 CODE RULES:
@@ -659,7 +686,7 @@ CODE RULES:
 
         prompt = f"{instruction}\n\nProblem:\n{text}"
 
-        display = f"[Solve] {text[:80]}..." if len(text) > 80 else f"[Solve] {text}"
+        display = f"[Solve] {len(all_text_parts)} page(s)"
         self._overlay.show_transcript(display)
         self._overlay.start_streaming_response()
         self._last_transcript = prompt
@@ -672,22 +699,35 @@ CODE RULES:
         )
 
     def _on_explain_click(self) -> None:
-        if not self._pending_payload:
+        if not self._pending_payloads:
             return
         self._toolbar.set_processing(True)
         self._overlay.clear_and_show()
 
-        if self._pending_payload.payload_type == PayloadType.IMAGE:
-            from app.ocr import WindowsOCR
-            ocr = WindowsOCR()
-            ocr_result = ocr.extract_text(self._pending_payload.content)
-            if not ocr_result.success or not ocr_result.text:
-                self._overlay.show_error("OCR failed or no text detected")
-                self._toolbar.set_processing(False)
-                return
-            text = ocr_result.text
-        else:
-            text = self._pending_payload.content
+        all_text_parts = []
+        from app.ocr import WindowsOCR
+        ocr = WindowsOCR()
+
+        for i, payload in enumerate(self._pending_payloads):
+            if payload.payload_type == PayloadType.IMAGE:
+                ocr_result = ocr.extract_text(payload.content)
+                if ocr_result.success and ocr_result.text:
+                    all_text_parts.append(f"[Page {i+1}]\n{ocr_result.text}")
+                else:
+                    all_text_parts.append(f"[Page {i+1}]\n(OCR failed)")
+            else:
+                all_text_parts.append(f"[Page {i+1}]\n{payload.content}")
+
+        text = "\n\n".join(all_text_parts)
+
+        if not text.strip():
+            self._overlay.show_error("No text extracted from any image")
+            self._toolbar.set_processing(False)
+            return
+
+        self._pending_payloads.clear()
+        self._toolbar.set_queue_count(0)
+        self._toolbar.set_clipboard_ready(False)
 
         instruction = """You are ME in a technical interview for a Python backend/platform role. Use my resume context above. Speak as if YOU lived these experiences.
 
@@ -710,7 +750,7 @@ TONE: Confident peer."""
 
         prompt = f"{instruction}\n\nQuestion:\n{text}"
 
-        display = f"[Analyze] {text[:80]}..." if len(text) > 80 else f"[Analyze] {text}"
+        display = f"[Analyze] {len(all_text_parts)} page(s)"
         self._overlay.show_transcript(display)
         self._overlay.start_streaming_response()
         self._last_transcript = prompt
@@ -723,7 +763,10 @@ TONE: Confident peer."""
         )
 
     def _on_git_click(self) -> None:
-        if not self._pending_payload or self._pending_payload.payload_type != PayloadType.IMAGE:
+        if not self._pending_payloads:
+            return
+        payload = self._pending_payloads[-1]
+        if payload.payload_type != PayloadType.IMAGE:
             return
         self._toolbar.set_processing(True)
         self._overlay.clear_and_show()
@@ -739,7 +782,7 @@ Types: feat, fix, refactor, docs, test, chore, style, perf
 
 Output ONLY the commit message, nothing else."""
         asyncio.run_coroutine_threadsafe(
-            self._claude.stream_vision_response(prompt, self._pending_payload.content),
+            self._claude.stream_vision_response(prompt, payload.content),
             self._loop
         )
 
@@ -972,6 +1015,9 @@ Output ONLY the commit message, nothing else."""
 
     def _on_reset_click(self) -> None:
         self._session_manager.clear()
+        self._pending_payloads.clear()
+        self._toolbar.set_queue_count(0)
+        self._toolbar.set_clipboard_ready(False)
         self._update_clear_session_action()
         self._overlay.show_response("Session cleared")
 
