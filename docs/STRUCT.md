@@ -1,56 +1,35 @@
-# GhostCue
+# widget-helper
 
 **Language:** python
 
 ## Structure
 
-- `app/` - Core application logic and providers
-  - `providers/` - LLM backend implementations (Claude, Gemini)
-- `docs/` - Documentation files
-- `src/` - Utility scripts and hotfixes
-- `tests/` - Unit and integration tests
+- `CProjectswidget-helpertests/` - Project files (0 files)
+- `app/` - Application code (0 files)
+- `app/providers/` - Project files (0 files)
+- `docs/` - Documentation (0 files)
+- `src/` - Source code (0 files)
+- `tests/` - Tests (0 files)
 
 ## Key Files
 
-- `main.py` - Application entry point and tray initialization
-- `config.py` - Configuration management using environment variables
-- `contracts.py` - Data classes and shared protocols
-- `context.txt` - Custom AI persona, reference data, and response logic
-- `requirements.txt` - Project dependencies
+- `main.py` - Entry point
+- `config.py` - Configuration
+- `contracts.py` - Data contracts
+- `README.md` - Documentation
 
 ## Module Details
 
-### `app/`
-- `audio_worker.py`: Background worker for audio processing
-- `claude_client.py`: Streaming client for Claude
-- `clipboard.py`: Clipboard monitoring utility
-- `deepgram_client.py`: Deepgram transcription client
-- `loopback_client.py`: System audio capture client
-- `loopback_worker.py`: Background worker for audio streaming
-- `ocr.py`: Windows OCR integration
-- `overlay.py`: HUD/Overlay UI component
-- `recorder.py`: Audio recording management
-- `session_manager.py`: Application session state
-- `stealth.py`: Anti-detection and window management
-- `transcriber.py`: Transcription orchestration
-- `tray.py`: System tray icon and toolbar
-- `typer.py`: Human-like typing simulation
+### `main.py`
+**Functions**: `hide_console() -> None, main() -> None`
 
-### `app/providers/`
-- `base.py`: Abstract base class for AI providers
-- `claude_provider.py`: Async implementation for Anthropic Claude (AsyncAnthropic)
-- `gemini_provider.py`: Implementation for Google Gemini
-
-### `src/`
-- `fixencodingandclipboard.py`: Hotfix for ASCII encoding and clipboard functionality
 
 ## Entry Points
 
-- **Main Application**: `python main.py`
-- **Tests**: `pytest tests/`
+- **New test:** tests/
 
-## Stats (Approximate)
+## Stats
 
-- Files: ~20 core source files
-- Directories: 5 major directories
-- Tests: 10+ test suites
+- Files: 4
+- Directories: 6
+- Lines: 207

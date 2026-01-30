@@ -47,12 +47,12 @@ class WindowsOCR:
 
         if not path.exists():
             return OCRResult(text="", success=False, error=f"Image not found: {image_path}")
-        
+
+        loop = asyncio.new_event_loop()
         try:
-            loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(self._extract_async(path))
-            loop.close()
-            return result
+            return loop.run_until_complete(self._extract_async(path))
         except Exception as e:
             return OCRResult(text="", success=False, error=str(e))
+        finally:
+            loop.close()

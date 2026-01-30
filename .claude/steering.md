@@ -5,6 +5,11 @@
 - Frameworks: None
 - Tools: None
 
+## Environment
+- Virtual env: `.venv` (Windows)
+- Python: `.venv/Scripts/python.exe`
+- Run tests: `.venv/Scripts/python.exe -m pytest tests/ -v`
+- Install deps: `.venv/Scripts/pip.exe install <pkg>`
 ## Code Standards
 - New files: aim 200-300 lines, split at 400
 - Existing files: don't refactor unless >500 lines

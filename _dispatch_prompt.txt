@@ -1,85 +1,50 @@
-[FEATURE] Write a polished README.md for GhostCue
+Fix two bugs in widget-helper:
 
-## Context
-This is a real-time conversational AI assistant with audio capture and context persistence. Rename framing from "widget-helper" to "GhostCue". Do NOT frame it as an interview cheating tool - focus on legitimate use cases.
+## Bug 1: OCR coroutine never awaited (app/ocr.py)
 
-## Create README.md in project root
-
-Structure:
-
-```markdown
-# GhostCue
-
-**Real-time conversational AI assistant with audio capture and context persistence.**
-
-[One-liner: Listens to system audio, transcribes in real-time, provides AI-powered responses in a minimal stealth overlay]
-
-## What It Does
-
-- Captures system audio (WASAPI loopback) and transcribes speech in real-time via Deepgram
-- Sends transcripts to AI (Claude or Gemini) along with your custom context
-- Displays responses in a minimal, always-on-top overlay designed to stay out of the way
-- Maintains conversation history for natural multi-turn exchanges
-- Supports screenshot OCR for visual content
-
-## Use Cases
-
-- **Accessibility** - Processing aid for neurodivergent individuals during live conversations
-- **Language support** - Real-time assistance for ESL speakers
-- **Learning & tutoring** - Ask questions about what's being explained as you hear it
-- **Technical support** - Instant reference to complex knowledge bases during calls
-- **Presentations** - Live Q&A assistance with your prepared materials
-- **Meeting support** - Context-aware notes and responses
-
-## Features
-
-- **F9** - Toggle audio recording
-- **F8** - Send clipboard text
-- **F10** - Retry last response
-- **Esc** - Cancel
-- **Screenshot queue** - Capture multiple images, send together with OCR
-- **Session persistence** - Full conversation history maintained
-- **Multiple AI providers** - Claude, Gemini Pro, Gemini Flash (switchable via tray)
-
-## Requirements
-
-- Windows 10/11
-- Python 3.11+
-- API keys for:
-  - Deepgram (speech-to-text)
-  - Anthropic (Claude) and/or Google (Gemini)
-
-## Installation
-
-[Standard: clone, venv, pip install -r requirements.txt, .env setup]
-
-## Configuration
-
-- `context.txt` - Your custom context/knowledge base the AI references
-- `config.py` - Overlay appearance, timeouts, etc.
-
-## Usage
-
-1. Add your context/reference material to `context.txt`
-2. Run `python main.py`
-3. App runs in system tray
-4. Press F9 to start listening, F9 again to get response
-5. Response appears in overlay
-
-## Tech Stack
-
-- Python, PyQt6, asyncio
-- WASAPI loopback audio capture
-- Deepgram streaming transcription
-- Anthropic/Google GenAI APIs
-- Windows OCR
-
-## License
-
-MIT
+The error:
+```
+C:\Projects\widget-helper\app\ocr.py:58: RuntimeWarning: coroutine 'WindowsOCR._extract_async' was never awaited
+  return OCRResult(text="", success=False, error=str(e))
 ```
 
-Keep it clean, professional, honest about functionality without being explicit about any particular use case. Let users figure out how they want to use it.
+Current code in `extract_text()`:
+```python
+try:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    result = loop.run_until_complete(self._extract_async(path))
+    loop.close()
+    return result
+except Exception as e:
+    return OCRResult(text="", success=False, error=str(e))
+```
+
+Problem: If exception occurs after coroutine is created but before/during run_until_complete, the coroutine object leaks. Also the loop.close() isn't in a finally block.
+
+Fix: Use try/finally to ensure loop cleanup, and handle the coroutine properly.
+
+## Bug 2: numpy fromstring deprecation in soundcard (app/loopback_worker.py)
+
+The error:
+```
+[DEBUG] Subprocess error: Capture error: The binary mode of fromstring is removed, use frombuffer instead
+```
+
+This comes from the `soundcard` library (mediafoundation.py) which uses deprecated `np.fromstring()` that was removed in numpy 2.x.
+
+Fix: Add a monkey-patch at the TOP of loopback_worker.py (before soundcard import) to shim `np.fromstring` to use `np.frombuffer`:
+
+```python
+import numpy as np
+# Monkey-patch for soundcard compatibility with numpy 2.x
+if not hasattr(np, 'fromstring') or np.__version__.startswith('2'):
+    np.fromstring = lambda s, dtype=None, count=-1, sep='': np.frombuffer(s if isinstance(s, bytes) else s.encode(), dtype=dtype, count=count)
+```
+
+This must be BEFORE `import soundcard as sc`.
+
+Make both fixes. Keep the code clean and minimal.
 
 ## Code Standards
 

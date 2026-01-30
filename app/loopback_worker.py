@@ -5,6 +5,11 @@ from dataclasses import dataclass
 from typing import Literal, Union
 
 import numpy as np
+# Monkey-patch for soundcard compatibility with numpy 2.x
+if not hasattr(np, 'fromstring') or np.__version__.startswith('2'):
+    np.fromstring = lambda s, dtype=None, count=-1, sep='': np.frombuffer(
+        s if isinstance(s, bytes) else s.encode(), dtype=dtype, count=count
+    )
 from numpy.typing import NDArray
 import soundcard as sc
 from scipy.signal import resample
